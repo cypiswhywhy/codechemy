@@ -1,53 +1,31 @@
 # codechemy
 
-Assets for improving [Claude Code](https://claude.com/claude-code) workflows: a plugin that
-gives every session the same engineering contract, skills for the jobs around the code
-(shipping a PR, auditing a repo, auditing your own setup), and Copilot review setup notes.
-
-Each folder has its own README with the details.
+Sharper [Claude Code](https://claude.com/claude-code) sessions: a plugin that holds every
+session to the same engineering contract, plus skills for the work around the code —
+shipping a PR, auditing a repo, auditing your own setup.
 
 ## Install
 
-**The plugin** — one command, no clone:
+The plugin — one command, no clone:
 
 ```bash
 claude plugin marketplace add cypiswhywhy/codechemy && claude plugin install engineering-practices@codechemy
 ```
 
-Or paste this into any Claude Code session:
-
-> Add the Claude Code marketplace `cypiswhywhy/codechemy` and install the
-> `engineering-practices` plugin from it, then show me `claude plugin details
-> engineering-practices`.
-
-**The skills** — not in the plugin yet, so they need a clone:
+The skills — not packaged yet, so they need a clone:
 
 ```bash
 git clone https://github.com/cypiswhywhy/codechemy && cd codechemy
-make install-skills          # symlinks claude-code/skills/* into ~/.claude/skills
+make install-skills    # symlinks claude-code/skills/* into ~/.claude/skills
 ```
 
 Restart Claude Code afterwards so hooks and skills load.
 
-### Prerequisites
+## The plugin
 
-`make install-skills` checks these first and prints what is missing, then installs
-anyway — a missing command only disables the skills that call it. `make check` runs
-the same check on its own and exits non-zero if anything is missing.
-
-| Command | Needed by | Get it |
-|---|---|---|
-| `git` | `/push`, `/codebase-maintenance`, both increment skills | https://git-scm.com/downloads |
-| `gh` | `/push`, `/codebase-maintenance`, both increment skills | https://cli.github.com |
-| `python3` | `/codebase-maintenance`, `/claude-customizations`, the plugin hooks | https://www.python.org/downloads |
-| `openspec` | `/apply-increment`, `/apply-all-increments` | `npm install -g @fission-ai/openspec` |
-
-## What's in here
-
-### [`engineering-practices`](claude-code/plugins/engineering-practices/README.md) — the plugin
-
-Durable defaults for every project: *leave the code smaller than you found it*, *small
-increments*, *test-driven by default*.
+[`engineering-practices`](claude-code/plugins/engineering-practices/README.md) — durable
+defaults for every project: *leave the code smaller than you found it*, *small increments*,
+*test-driven by default*.
 
 | Piece | What it does |
 |---|---|
@@ -55,7 +33,7 @@ increments*, *test-driven by default*.
 | `Stop` hook | Nudges for a tidy pass when files only grew, or the change is large |
 | `/maintenance-toolbox` | Records a project's dead-code, lint and test commands in its CLAUDE.md |
 
-### [`claude-code/skills/`](claude-code/skills/index.md) — standalone skills
+## The skills
 
 | Skill | What it does |
 |---|---|
@@ -66,15 +44,34 @@ increments*, *test-driven by default*.
 | [`/apply-all-increments`](claude-code/skills/apply-all-increments/SKILL.md) | Repeats that to main, archiving the change at the end |
 | [docschemy](https://github.com/cypiswhywhy/docschemy) *(external)* | Generates and maintains project documentation |
 
-### [`github-copilot/`](github-copilot/README.md) — review setup
+## Also here
 
-Setup notes for automated GitHub Copilot code reviews, plus `copilot-instructions`
-templates to drop into a repository.
+[`github-copilot/`](github-copilot/README.md) — setup notes for automated Copilot code
+reviews, plus `copilot-instructions` templates to drop into a repository.
 
-## Tests
+<details>
+<summary><b>Prerequisites</b></summary>
+
+`make install-skills` checks these first and prints what is missing, then installs anyway —
+a missing command only disables the skills that call it. `make check` runs the same check on
+its own and exits non-zero if anything is missing.
+
+| Command | Needed by | Get it |
+|---|---|---|
+| `git` | `/push`, `/codebase-maintenance`, both increment skills | https://git-scm.com/downloads |
+| `gh` | `/push`, `/codebase-maintenance`, both increment skills | https://cli.github.com |
+| `python3` | `/codebase-maintenance`, `/claude-customizations`, the plugin hooks | https://www.python.org/downloads |
+| `openspec` | `/apply-increment`, `/apply-all-increments` | `npm install -g @fission-ai/openspec` |
+
+</details>
+
+<details>
+<summary><b>Tests</b></summary>
 
 ```bash
 python3 claude-code/plugins/engineering-practices/hooks/test_practices.py
 python3 claude-code/plugins/engineering-practices/hooks/test_leave_it_smaller.py
 python3 claude-code/skills/claude-customizations/scripts/test_inventory.py
 ```
+
+</details>
