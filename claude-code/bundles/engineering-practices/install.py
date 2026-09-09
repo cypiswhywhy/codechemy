@@ -49,7 +49,7 @@ STATE_DIRS = [CONFIG_DIR / p.parent.name for p in HOOKS]  # per-hook state, e.g.
 BEGIN = f"<!-- {NAME}:begin"
 END = f"<!-- {NAME}:end -->"
 HEADER = (
-    f"{BEGIN} v{VERSION} (managed block: install.py in {NAME}/ of the codechemy repo replaces "
+    f"{BEGIN} v{VERSION} (managed block: install.py in claude-code/bundles/{NAME}/ of the codechemy repo replaces "
     "it on reinstall; edit practices/*.md in the bundle, not this copy) -->"
 )
 

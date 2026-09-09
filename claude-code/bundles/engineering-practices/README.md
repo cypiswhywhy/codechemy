@@ -26,7 +26,7 @@ make install-engineering-practices      # from the repository root
 make uninstall-engineering-practices    # removes everything it added
 ```
 
-Without `make`: `python3 engineering-practices/install.py [--uninstall]`.
+Without `make`: `python3 claude-code/bundles/engineering-practices/install.py [--uninstall]`.
 
 Prefer to let Claude do it? Paste this into any Claude Code session:
 
@@ -129,8 +129,8 @@ resumed by running it again.
 ## Tests
 
 ```bash
-python3 engineering-practices/test_install.py
-python3 engineering-practices/hooks/leave-it-smaller/test_hook.py
+python3 claude-code/bundles/engineering-practices/test_install.py
+python3 claude-code/bundles/engineering-practices/hooks/leave-it-smaller/test_hook.py
 ```
 
 Throwaway git repositories and config dirs; the hook is driven the way Claude Code drives it

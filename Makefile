@@ -1,6 +1,6 @@
-SKILLS_SRC := claude_code_skills
+SKILLS_SRC := claude-code/skills
 SKILLS_DEST := $(HOME)/.claude/skills
-PRACTICES_DIR := engineering-practices
+PRACTICES_DIR := claude-code/bundles/engineering-practices
 
 .PHONY: install-skills
 install-skills:
