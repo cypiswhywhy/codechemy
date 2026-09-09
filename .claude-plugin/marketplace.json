@@ -9,7 +9,7 @@
     {
       "name": "engineering-practices",
       "source": "./claude-code/plugins/engineering-practices",
-      "description": "Leave the code smaller than you found it, ship small increments, work test-driven: a contract hook, a diff-shape hook and three skills."
+      "description": "Leave the code smaller than you found it, ship small increments, work test-driven: a contract hook, a diff-shape hook and a maintenance-toolbox skill."
     }
   ]
 }

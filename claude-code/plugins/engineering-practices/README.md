@@ -10,7 +10,7 @@ in every project**. Three kinds of resource that combine into one behaviour:
 | `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
-three practices, two hooks and three skills, about two problems: agents add lines and rarely
+three practices, two hooks and one skill, about two problems: agents add lines and rarely
 remove them, and turn a plan into one thousand-line PR; and they write the code first and the
 tests, if at all, afterwards.
 
@@ -66,6 +66,9 @@ clone of it gets the plugin with no command at all.
   the task does not need, prove then delete, a scope boundary, and the diff shape in every summary.
 - **20-small-increments.md**: refactor first, then feature, then follow-ups; cleanup in its own
   commits; about 400 changed lines is where you land what is complete; one task group per PR.
+  The [`/apply-increment`](../../skills/apply-increment/SKILL.md) and
+  [`/apply-all-increments`](../../skills/apply-all-increments/SKILL.md) skills carry this out for
+  an OpenSpec project; they ship outside the plugin because they need the `openspec` CLI.
 - **30-test-driven.md**: red-green-refactor whenever a change alters behaviour and the project
   has a test harness. Failing test first and seen failing, smallest code to green, refactor on
   green; bug fixes start with a reproducing test; a red test means root-cause the code, and the test
@@ -113,26 +116,6 @@ asks the user one question about adding what is missing, verifies each command r
 writes a five-line `## Maintenance toolbox` section to the project's `CLAUDE.md`, where the
 contract tells the agent to look before deleting. Declining writes
 `<!-- maintenance-toolbox: none -->` so the hint stops. It records; `/codebase-maintenance` fixes.
-
-### Skill: `/apply-increment`
-
-`/opsx:apply` walks a whole OpenSpec task list in one run. This skill implements **one task
-group** (`## N.` heading in `tasks.md`), lands it as its own PR via `/push` (or `gh`), and stops;
-run it again after the merge. On first use in a project it offers, once, to seed
-`openspec/config.yaml` with a `rules.tasks` entry (group tasks into PR-sized increments at
-propose time) and an `operations.apply.guidance` entry (one group per run) that OpenSpec feeds
-to the vendor `/opsx:propose` and `/opsx:apply` commands too, so the increment behaviour holds
-even when someone uses those directly.
-
-### Skill: `/apply-all-increments`
-
-The loop around `/apply-increment`. It revalidates the change against today's main (artifacts
-complete, named files and dependencies still there, groups still PR-sized), then for every
-remaining group runs `/apply-increment`, lets `/push` take the PR to green, asks the user to merge
-and continues from a fresh main. When the last group has landed it archives the change through
-`/opsx:archive` on its own PR and reports every increment with its PR and diff shape. The user's
-only manual step is the merge; state lives in `tasks.md` and on GitHub, so an interrupted run is
-resumed by running it again.
 
 ## Tests
 

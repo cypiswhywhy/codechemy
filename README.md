@@ -41,8 +41,6 @@ increments*, *test-driven by default*.
 | `SessionStart` hook | States the contract in every session |
 | `Stop` hook | Nudges for a tidy pass when files only grew, or the change is large |
 | `/maintenance-toolbox` | Records a project's dead-code, lint and test commands in its CLAUDE.md |
-| `/apply-increment` | Implements one OpenSpec task group as its own PR, then stops |
-| `/apply-all-increments` | Repeats that to main, archiving the change at the end |
 
 ### [`claude-code/skills/`](claude-code/skills/index.md) — standalone skills
 
@@ -51,6 +49,8 @@ increments*, *test-driven by default*.
 | [`/push`](claude-code/skills/push/SKILL.md) | Pushes a branch, opens a PR, iterates on the Copilot review until green |
 | [`/codebase-maintenance`](claude-code/skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, revertible commits |
 | [`/claude-customizations`](claude-code/skills/claude-customizations/SKILL.md) | Read-only audit of every Claude Code customization, CLI and Desktop, against a fresh install |
+| [`/apply-increment`](claude-code/skills/apply-increment/SKILL.md) | Implements one OpenSpec task group as its own PR, then stops |
+| [`/apply-all-increments`](claude-code/skills/apply-all-increments/SKILL.md) | Repeats that to main, archiving the change at the end |
 | [docschemy](https://github.com/cypiswhywhy/docschemy) *(external)* | Generates and maintains project documentation |
 
 ### [`github-copilot/`](github-copilot/README.md) — review setup
