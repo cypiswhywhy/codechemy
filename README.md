@@ -29,6 +29,19 @@ make install-skills          # symlinks claude-code/skills/* into ~/.claude/skil
 
 Restart Claude Code afterwards so hooks and skills load.
 
+### Prerequisites
+
+`make install-skills` checks these first and prints what is missing, then installs
+anyway — a missing command only disables the skills that call it. `make check` runs
+the same check on its own and exits non-zero if anything is missing.
+
+| Command | Needed by | Get it |
+|---|---|---|
+| `git` | `/push`, `/codebase-maintenance`, both increment skills | https://git-scm.com/downloads |
+| `gh` | `/push`, `/codebase-maintenance`, both increment skills | https://cli.github.com |
+| `python3` | `/codebase-maintenance`, `/claude-customizations`, the plugin hooks | https://www.python.org/downloads |
+| `openspec` | `/apply-increment`, `/apply-all-increments` | `npm install -g @fission-ai/openspec` |
+
 ## What's in here
 
 ### [`engineering-practices`](claude-code/plugins/engineering-practices/README.md) — the plugin
