@@ -59,7 +59,7 @@ MAX_TEXT_BYTES = 1_000_000
 GROWTH_MESSAGE = (
     "{existing_files} existing file(s) grew by +{existing_added} with only "
     "-{existing_deleted} removed. Before you finish, make one tidy pass over the code you "
-    "touched (see 'Leave the code smaller than you found it' in ~/.claude/CLAUDE.md): delete "
+    "touched (see the 'Leave the code smaller than you found it' practice): delete "
     "the path this change superseded, dead code, unused imports and parameters, duplicated "
     "helpers, and defensive code the task did not need. Prove each removal first (the "
     "project's Maintenance toolbox, then a caller grep). If nothing can go, say so explicitly "

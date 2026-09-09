@@ -1,6 +1,5 @@
 SKILLS_SRC := claude-code/skills
 SKILLS_DEST := $(HOME)/.claude/skills
-PRACTICES_DIR := claude-code/bundles/engineering-practices
 
 .PHONY: install-skills
 install-skills:
@@ -25,15 +24,3 @@ install-skills:
 		ln -sfn "$(CURDIR)/$(SKILLS_SRC)/$$name" "$(SKILLS_DEST)/$$name"; \
 		echo "installed $$name -> $(SKILLS_DEST)/$$name"; \
 	done
-
-# engineering-practices: a managed CLAUDE.md block, hooks and skills that make the agent
-# leave code smaller than it found it and ship plans as small increments (see its README).
-.PHONY: install-engineering-practices uninstall-engineering-practices status-engineering-practices
-install-engineering-practices:
-	@python3 $(PRACTICES_DIR)/install.py
-
-uninstall-engineering-practices:
-	@python3 $(PRACTICES_DIR)/install.py --uninstall
-
-status-engineering-practices:
-	@python3 $(PRACTICES_DIR)/install.py --status

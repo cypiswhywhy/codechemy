@@ -1,8 +1,0 @@
-{
-  "script": "leave_it_smaller.py",
-  "events": {
-    "Stop": "stop",
-    "SessionStart": "session-start"
-  },
-  "timeout": 30
-}

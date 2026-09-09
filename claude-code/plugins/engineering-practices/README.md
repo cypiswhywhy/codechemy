@@ -1,59 +1,59 @@
 # engineering-practices — durable defaults for Claude Code, in every project
 
-A bundle of the practices I want a coding agent to follow in **every session, in every
-project**, installed with one command. It is **not a Claude Code plugin**: a plugin can carry
-hooks and skills but cannot write to your global `~/.claude/CLAUDE.md`, and the instruction
-layer is the part that carries the *why*. So the bundle is three kinds of resource that
-combine into one behaviour, and a stdlib installer that is generic over them:
+A Claude Code plugin holding the practices I want a coding agent to follow in **every session,
+in every project**. Three kinds of resource that combine into one behaviour:
 
-| Directory | Becomes | Role |
+| Directory | Loaded as | Role |
 |---|---|---|
-| `practices/*.md` | one managed block in `~/.claude/CLAUDE.md` (files concatenated in name order) | **the contract**: what the agent should do and why |
-| `hooks/<name>/` (`hook.json` + script + tests) | a script in `~/.claude/hooks/`, registered in `~/.claude/settings.json` per event | **the nudge**: deterministic checks the agent cannot forget |
-| `skills/<name>/` | a copy in `~/.claude/skills/<name>/` | **the know-how**: procedures the agent runs when asked or hinted |
-| `VERSION` | the version stamp in the block header and in `~/.claude/engineering-practices.json` | tells a user what they have |
+| `practices/*.md` | a `SessionStart` hook that prints them into the session's context (name order) | **the contract**: what the agent should do and why |
+| `hooks/` | `hooks.json`, registered per event | **the nudge**: deterministic checks the agent cannot forget |
+| `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
-Adding a practice is a new file; the installer picks it up. Today the bundle holds three practices,
-one hook and three skills, about two problems: agents add lines and rarely remove them, and turn a
-plan into one thousand-line PR; and they write the code first and the tests, if at all, afterwards.
+Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
+three practices, two hooks and three skills, about two problems: agents add lines and rarely
+remove them, and turn a plan into one thousand-line PR; and they write the code first and the
+tests, if at all, afterwards.
 
 ## Install
 
-From a clone of this repository:
+One command, no clone:
 
 ```bash
-make install-engineering-practices      # from the repository root
-make uninstall-engineering-practices    # removes everything it added
+claude plugin marketplace add cypiswhywhy/codechemy && claude plugin install engineering-practices@codechemy
 ```
 
-Without `make`: `python3 claude-code/bundles/engineering-practices/install.py [--uninstall]`.
+Or paste this into any Claude Code session:
 
-Prefer to let Claude do it? Paste this into any Claude Code session:
+> Add the Claude Code marketplace `cypiswhywhy/codechemy` and install the
+> `engineering-practices` plugin from it, then show me `claude plugin details
+> engineering-practices`.
 
-> Clone `git@github.com:cypiswhywhy/codechemy.git` (or `git pull` if I already have it), run `make install-engineering-practices` from its root, and show me the output.
-
-Requirements: Python 3.9+, `git`, macOS or Linux. Restart Claude Code (or run `/hooks`) so
-the hooks load. Re-running is safe: the managed block, hook scripts and skill copies are
-replaced in place, other content in `CLAUDE.md` and `settings.json` is untouched,
-`settings.json` is backed up first, and the self-test runs at the end.
-
-## Updating and versions
-
-**Everything installed is a copy. `git pull` changes nothing in your environment**; only the
-installer applies a new version:
+Restart Claude Code (or start a new session) afterwards so the hooks load. Requires stdlib
+Python 3.9+ and `git`, on macOS or Linux.
 
 ```bash
-cd codechemy && git pull && make install-engineering-practices
-make status-engineering-practices     # what is installed vs what the checkout offers
+claude plugin marketplace update codechemy   # pull new versions
+claude plugin update engineering-practices
+claude plugin uninstall engineering-practices
 ```
 
-The bundle version lives in `VERSION` (semver, bumped with every change to `practices/`,
-`hooks/` or `skills/`). The installer stamps it into the managed block's header
-(`<!-- engineering-practices:begin v0.1.0 ... -->`) and records it, with the bundle commit
-and the list of installed practices, hooks and skills, in `~/.claude/engineering-practices.json`.
-`--status` compares that record with the checkout and tells you when to reinstall. The record
-is also how the installer knows which `~/.claude/skills/<name>/` directories are its own:
-a directory it did not create is never overwritten or removed.
+`/plugin` does the same interactively, and enables or disables the plugin per project.
+
+**Working on the plugin?** Point the marketplace at your clone instead
+(`claude plugin marketplace add /path/to/codechemy`); `marketplace update` then picks up your
+edits, and the hooks run straight from the working tree.
+
+**A whole repository at once**: commit this to the project's `.claude/settings.json` and every
+clone of it gets the plugin with no command at all.
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "codechemy": {"source": {"source": "github", "repo": "cypiswhywhy/codechemy"}}
+  },
+  "enabledPlugins": {"engineering-practices@codechemy": true}
+}
+```
 
 ## What is in it
 
@@ -70,7 +70,13 @@ a directory it did not create is never overwritten or removed.
   changes only once the logic under it is shown correct; not
   applicable to docs, config, one-off scripts and declared spikes, and the summary says so.
 
-### Hook: `leave-it-smaller` (`hooks/leave-it-smaller/`)
+### Hook: `practices` (`hooks/practices.py`)
+
+`SessionStart`. Concatenates `practices/*.md` in name order behind one line saying these are
+standing instructions that override conflicting defaults, and prints them; Claude Code adds
+stdout to the session's context. Editing a practice takes effect in the next session.
+
+### Hook: `leave-it-smaller` (`hooks/leave_it_smaller.py`)
 
 One script, two events. `stop` measures the whole pending change (branch vs merge-base with
 `main`/`master` plus working tree; on the default branch, unpushed commits plus working tree;
@@ -129,38 +135,37 @@ resumed by running it again.
 ## Tests
 
 ```bash
-python3 claude-code/bundles/engineering-practices/test_install.py
-python3 claude-code/bundles/engineering-practices/hooks/leave-it-smaller/test_hook.py
+python3 hooks/test_practices.py
+python3 hooks/test_leave_it_smaller.py
 ```
 
-Throwaway git repositories and config dirs; the hook is driven the way Claude Code drives it
-(JSON on stdin). The installer runs both suites after installing.
+Throwaway git repositories and config dirs; each hook is driven the way Claude Code drives it
+(JSON on stdin).
 
 ## Adding a practice, hook or skill
 
 - **Practice**: add `practices/NN-<topic>.md` with a single `#` heading; keep it to rules the
-  agent can check itself against, with the reason in one clause. Re-run the installer.
-- **Hook**: add `hooks/<name>/hook.json` (`script`, `events` mapping event → subcommand,
-  optional `timeout`), the script (stdlib, exit 0 on any error, log under
-  `~/.claude/<name>/`), and a `test_*.py`. Re-run the installer.
-- **Skill**: add `skills/<name>/SKILL.md` with `name` equal to the directory. Re-run the installer.
-- Bump `VERSION` in the same change; the installer test insists on semver.
+  agent can check itself against, with the reason in one clause.
+- **Hook**: add the script to `hooks/` (stdlib, log under `~/.claude/<name>/`), register it in
+  `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` in the command, and add a `test_*.py`.
+- **Skill**: add `skills/<name>/SKILL.md` with `name` equal to the directory.
+- Bump `version` in `.claude-plugin/plugin.json` in the same change.
 
 ## Design notes
 
-- **Why not a plugin.** Plugins are the right vehicle for hooks and skills alone, and the
-  `hooks/` + `skills/` halves could become one later. The contract has to live in `CLAUDE.md`
-  (a plugin cannot write there, and a SessionStart hook that prints it would re-spend the tokens
-  every session and rank below the system prompt), so the bundle owns all three and installs
-  them the same way.
-- **Why all three layers.** A CLAUDE.md rule alone is forgotten by turn 40; a hook alone can
-  measure but not explain; a skill alone is never invoked. The contract says what, the hook keeps
-  it visible late in a session, the skills make the expensive part (proving a deletion, splitting
-  a plan) cheap enough to happen.
+- **Why a plugin, and why the contract is a hook.** A plugin cannot write to
+  `~/.claude/CLAUDE.md`, so the contract is printed by a `SessionStart` hook instead. That costs
+  the same tokens (a global `CLAUDE.md` is injected every session too) and buys `/plugin install`,
+  `/plugin update` and per-project enabling in place of a clone, a `make` target and a 500-line
+  installer that had to be re-run after every `git pull`.
+- **Why all three layers.** A rule alone is forgotten by turn 40; a hook alone can measure but
+  not explain; a skill alone is never invoked. The contract says what, the `leave-it-smaller`
+  hook keeps it visible late in a session, the skills make the expensive part (proving a
+  deletion, splitting a plan) cheap enough to happen.
 - **Why the hook blocks instead of only reporting.** A `systemMessage` is seen by the user; a
   `decision: block` with a `reason` is seen by the agent and acted on before it hands back.
 - **Why it is bounded.** An unbounded nudge becomes noise the agent learns to justify away.
 - **Why thresholds.** Zero removals in a 15-line addition is normal; in a 200-line change to
   existing files it is the smell this exists to catch. Defaults are conservative and env-tunable.
-- **Stdlib only, never fails the session.** Hooks exit 0 on any error and log under
-  `~/.claude/<hook-name>/hook.log`.
+- **Stdlib only.** `leave_it_smaller.py` exits 0 on any error and logs under
+  `~/.claude/leave-it-smaller/hook.log`, so a stop is never blocked by a bug in it.
