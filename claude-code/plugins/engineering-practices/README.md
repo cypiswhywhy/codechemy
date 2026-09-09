@@ -41,7 +41,9 @@ claude plugin uninstall engineering-practices
 
 **Working on the plugin?** Point the marketplace at your clone instead
 (`claude plugin marketplace add /path/to/codechemy`); `marketplace update` then picks up your
-edits, and the hooks run straight from the working tree.
+edits, and the hooks run straight from the working tree. A marketplace name holds one source,
+so switching between the clone and GitHub means `claude plugin marketplace remove codechemy`
+first — otherwise the add is refused for a source that differs from the declared one.
 
 **A whole repository at once**: commit this to the project's `.claude/settings.json` and every
 clone of it gets the plugin with no command at all.
