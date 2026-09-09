@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to ~/.claude/mcp-audit/config.json (or run scripts/init-config.sh). Edit 'servers' to the MCP server names YOU want to audit. A server name is the middle token of its tool ids: mcp__<server>__<tool>. If this file is missing or 'servers' is empty, nothing is logged.",
+  "servers": ["cookiev2", "atlassian", "asana"],
+  "enabled": true,
+  "truncate_bytes": 2048,
+  "log_path": "~/.claude/mcp-audit/mcp-invocations.jsonl"
+}

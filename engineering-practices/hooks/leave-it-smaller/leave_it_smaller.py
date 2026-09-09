@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""leave-it-smaller: Claude Code hooks for the "leave the code smaller than you found it" contract.
+
+    python3 leave_it_smaller.py stop            # Stop hook
+    python3 leave_it_smaller.py session-start   # SessionStart hook
+
+Stop: measures the shape of the change about to be handed back (the branch versus its base,
+plus the working tree) and, when existing files only grew or the change is already large,
+blocks the stop with a request for a tidy pass or a split. The nudge is bounded: never while
+the agent is already continuing because of a stop hook, never for a diff it has already
+nudged on, and at most LEAVE_IT_SMALLER_MAX_NUDGES times per session. Otherwise the shape is
+shown to the user as a one-line system message.
+
+SessionStart: points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
+`## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
+
+Stdlib only. Never fails the session: any unexpected error is logged and exits 0.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def _env_number(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+# Existing files that gained at least MIN_ADDED lines while losing fewer than
+# MAX_RATIO of that count read as "add-only growth".
+MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
+MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
+# Total changed lines from which the change reads as "large; land an increment".
+LARGE = int(_env_number("LEAVE_IT_SMALLER_LARGE", 400))
+# Upper bound on blocked stops per session.
+MAX_NUDGES = int(_env_number("LEAVE_IT_SMALLER_MAX_NUDGES", 2))
+
+CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+STATE_DIR = CONFIG_DIR / "leave-it-smaller" / "sessions"
+LOG_FILE = CONFIG_DIR / "leave-it-smaller" / "hook.log"
+STATE_TTL_SECONDS = 7 * 24 * 3600
+
+TOOLBOX_HEADING = "## Maintenance toolbox"
+TOOLBOX_OPT_OUT = "maintenance-toolbox: none"
+
+DEFAULT_BRANCH_CANDIDATES = ("origin/HEAD", "origin/main", "origin/master", "main", "master")
+MAX_UNTRACKED_FILES = 200
+MAX_TEXT_BYTES = 1_000_000
+
+GROWTH_MESSAGE = (
+    "{existing_files} existing file(s) grew by +{existing_added} with only "
+    "-{existing_deleted} removed. Before you finish, make one tidy pass over the code you "
+    "touched (see 'Leave the code smaller than you found it' in ~/.claude/CLAUDE.md): delete "
+    "the path this change superseded, dead code, unused imports and parameters, duplicated "
+    "helpers, and defensive code the task did not need. Prove each removal first (the "
+    "project's Maintenance toolbox, then a caller grep). If nothing can go, say so explicitly "
+    "in your summary, with the diff shape."
+)
+LARGE_MESSAGE = (
+    "This change is already {total} lines. Land what is complete as its own commit (or PR) "
+    "before adding more, and state in your summary how the remainder is split into increments."
+)
+TOOLBOX_HINT = (
+    "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
+    "the dead-code, lint and test commands that deletions must be proven with are not recorded "
+    "here. At the user's first substantive coding request, offer once to run "
+    "/maintenance-toolbox (it detects them together with the user and writes the section). Do "
+    "not run it unasked. If the user declines, add `<!-- maintenance-toolbox: none -->` to the "
+    "repository's CLAUDE.md so this hint stops."
+)
+
+
+class GitError(Exception):
+    pass
+
+
+# ----- git -------------------------------------------------------------------
+
+
+def git(cwd: str | Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=20, check=False
+    )
+    if proc.returncode != 0:
+        raise GitError(proc.stderr.strip() or f"git {' '.join(args)} failed")
+    return proc.stdout
+
+
+def ref_exists(cwd: str | Path, ref: str) -> bool:
+    try:
+        git(cwd, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    except GitError:
+        return False
+    return True
+
+
+def merge_base(cwd: str | Path, a: str, b: str) -> str | None:
+    try:
+        return git(cwd, "merge-base", a, b).strip() or None
+    except GitError:
+        return None
+
+
+def base_ref(root: str) -> str | None:
+    """The commit the change is measured against; None for a repository with no commits.
+
+    On a feature branch that is the merge-base with the default branch, so the whole
+    branch counts (the PR shape). On the default branch it is the merge-base with the
+    upstream when one exists (unpushed work), else HEAD (uncommitted work).
+    """
+    if not ref_exists(root, "HEAD"):
+        return None
+    branch = git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    default = next((c for c in DEFAULT_BRANCH_CANDIDATES if ref_exists(root, c)), None)
+    if default == "origin/HEAD":
+        default = git(root, "rev-parse", "--abbrev-ref", "origin/HEAD").strip()
+    default_short = default.split("/", 1)[1] if default and default.startswith("origin/") else default
+    if branch != "HEAD" and default and default_short != branch:
+        return merge_base(root, "HEAD", default) or "HEAD"
+    if ref_exists(root, "@{upstream}"):
+        return merge_base(root, "HEAD", "@{upstream}") or "HEAD"
+    return "HEAD"
+
+
+def rename_target(numstat_path: str) -> str:
+    """`git diff --numstat -M` renders renames as `old => new` or `dir/{old => new}/rest`."""
+    if " => " not in numstat_path:
+        return numstat_path
+    if "{" in numstat_path and "}" in numstat_path:
+        prefix, rest = numstat_path.split("{", 1)
+        middle, suffix = rest.split("}", 1)
+        return prefix + middle.split(" => ", 1)[1] + suffix
+    return numstat_path.split(" => ", 1)[1]
+
+
+def count_lines(path: Path) -> int | None:
+    """Line count of a text file, None for binaries and anything oversized."""
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_TEXT_BYTES:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if b"\0" in data[:8192]:
+        return None
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+
+
+def diff_shape(cwd: str) -> dict | None:
+    """Per-file additions/deletions of the pending change, or None outside a repository."""
+    try:
+        root = git(cwd, "rev-parse", "--show-toplevel").strip()
+    except (GitError, OSError):
+        return None
+    rows: list[tuple[str, int, int, bool]] = []  # (path, added, deleted, is_new)
+    base = base_ref(root)
+    if base is not None:
+        status: dict[str, str] = {}
+        for line in git(root, "diff", "--name-status", "-M", base).splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                status[parts[-1]] = parts[0][0]
+        for line in git(root, "diff", "--numstat", "-M", base).splitlines():
+            added, deleted, path = line.split("\t", 2)
+            if added == "-":  # binary
+                continue
+            path = rename_target(path)
+            rows.append((path, int(added), int(deleted), status.get(path) == "A"))
+    untracked = git(root, "ls-files", "--others", "--exclude-standard").splitlines()
+    for path in untracked[:MAX_UNTRACKED_FILES]:
+        lines = count_lines(Path(root) / path)
+        if lines is not None:
+            rows.append((path, lines, 0, True))
+
+    existing = [r for r in rows if not r[3]]
+    fingerprint = hashlib.sha1(
+        "\n".join(f"{p}\t{a}\t{d}" for p, a, d, _ in sorted(rows)).encode()
+    ).hexdigest()
+    return {
+        "files": len(rows),
+        "added": sum(r[1] for r in rows),
+        "deleted": sum(r[2] for r in rows),
+        "existing_files": len(existing),
+        "existing_added": sum(r[1] for r in existing),
+        "existing_deleted": sum(r[2] for r in existing),
+        "new_files": len(rows) - len(existing),
+        "fingerprint": fingerprint,
+    }
+
+
+# ----- assessment ------------------------------------------------------------
+
+
+def assess(shape: dict) -> tuple[bool, bool]:
+    """(add-only growth of existing files, change already large)."""
+    growth = (
+        shape["existing_files"] > 0
+        and shape["existing_added"] >= MIN_ADDED
+        and shape["existing_deleted"] < MAX_RATIO * shape["existing_added"]
+    )
+    large = shape["added"] + shape["deleted"] >= LARGE
+    return growth, large
+
+
+def summary_line(shape: dict) -> str:
+    return (
+        "leave-it-smaller: +{added} / -{deleted} across {files} file(s) "
+        "({existing_files} existing: +{existing_added} / -{existing_deleted}; "
+        "{new_files} new)"
+    ).format(**shape)
+
+
+# ----- per-session state -----------------------------------------------------
+
+
+def state_path(session_id: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id) or "unknown"
+    return STATE_DIR / f"{safe}.json"
+
+
+def load_state(session_id: str) -> dict:
+    try:
+        return json.loads(state_path(session_id).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(session_id: str, state: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    state_path(session_id).write_text(json.dumps(state))
+    cutoff = time.time() - STATE_TTL_SECONDS
+    for stale in STATE_DIR.glob("*.json"):
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass
+
+
+# ----- hooks -----------------------------------------------------------------
+
+
+def emit(payload: dict) -> None:
+    sys.stdout.write(json.dumps(payload) + "\n")
+
+
+def run_stop(payload: dict) -> None:
+    shape = diff_shape(payload.get("cwd") or os.getcwd())
+    if not shape or shape["files"] == 0:
+        return
+    session_id = str(payload.get("session_id") or "unknown")
+    state = load_state(session_id)
+    changed = state.get("fingerprint") != shape["fingerprint"]
+    growth, large = assess(shape)
+    summary = summary_line(shape)
+
+    can_nudge = (
+        changed
+        and not payload.get("stop_hook_active")
+        and state.get("nudges", 0) < MAX_NUDGES
+    )
+    reasons = []
+    if can_nudge and growth:
+        reasons.append(GROWTH_MESSAGE.format(**shape))
+    if can_nudge and large and not state.get("large_nudged"):
+        reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
+        state["large_nudged"] = True
+
+    state["fingerprint"] = shape["fingerprint"]
+    if reasons:
+        state["nudges"] = state.get("nudges", 0) + 1
+        save_state(session_id, state)
+        emit({"decision": "block", "reason": summary + "\n\n" + "\n\n".join(reasons)})
+        return
+    save_state(session_id, state)
+    if changed:
+        flags = [f for f, on in (("existing files only grew", growth), ("large change", large)) if on]
+        emit({"systemMessage": summary + (f" - {', '.join(flags)}" if flags else "")})
+
+
+def run_session_start(payload: dict) -> None:
+    cwd = payload.get("cwd") or os.getcwd()
+    try:
+        root = Path(git(cwd, "rev-parse", "--show-toplevel").strip())
+    except (GitError, OSError):
+        return
+    text = ""
+    for candidate in (root / "CLAUDE.md", root / ".claude" / "CLAUDE.md"):
+        try:
+            text += candidate.read_text(errors="replace")
+        except OSError:
+            pass
+    if TOOLBOX_HEADING in text or TOOLBOX_OPT_OUT in text:
+        return
+    print(TOOLBOX_HINT)
+
+
+def log_error(exc: BaseException) -> None:
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {type(exc).__name__}: {exc}\n")
+    except OSError:
+        pass
+
+
+def main(argv: list[str]) -> int:
+    command = argv[1] if len(argv) > 1 else ""
+    if command not in ("stop", "session-start"):
+        sys.stderr.write(__doc__)
+        return 2
+    if os.environ.get("LEAVE_IT_SMALLER_DISABLE"):
+        return 0
+    try:
+        payload = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+    except ValueError:
+        payload = {}
+    try:
+        if command == "stop":
+            run_stop(payload)
+        else:
+            run_session_start(payload)
+    except Exception as exc:  # noqa: BLE001 - a hook must never break the session
+        log_error(exc)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

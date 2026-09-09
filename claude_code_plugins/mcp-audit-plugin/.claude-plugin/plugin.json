@@ -1,0 +1,8 @@
+{
+  "name": "mcp-audit",
+  "version": "1.0.0",
+  "description": "Deterministic, durable audit log of MCP tool calls from user-selected servers. PreToolUse + PostToolUse hooks append JSONL; a sync script pushes rows to a shared Confluence table.",
+  "author": {
+    "name": "AI Center for Enablement"
+  }
+}
