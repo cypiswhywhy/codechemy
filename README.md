@@ -16,10 +16,19 @@ The skills — not packaged yet, so they need a clone:
 
 ```bash
 git clone https://github.com/cypiswhywhy/codechemy && cd codechemy
-make install-skills    # symlinks claude-code/skills/* into ~/.claude/skills
+make install-skills     # copies claude-code/skills/* into ~/.claude/skills
+make install-plugin     # installs the plugin, with this clone as the marketplace
 ```
 
 Restart Claude Code afterwards so hooks and skills load.
+
+Both targets copy: what is installed changes only when you run them again, never when the
+working tree does. Re-run `make install-skills` to update the skills. `make install-plugin`
+updates the plugin through `claude plugin update`, which is version-driven — bump `version`
+in the plugin's `plugin.json` when you change it, or there is nothing for the update to do.
+
+`make uninstall-skills` removes the skills this repo installed — and only those — and
+`make uninstall-plugin` removes the plugin along with its marketplace entry.
 
 ## The plugin
 
@@ -54,7 +63,8 @@ reviews, plus `copilot-instructions` templates to drop into a repository.
 
 `make install-skills` checks these first and prints what is missing, then installs anyway —
 a missing command only disables the skills that call it. `make check` runs the same check on
-its own and exits non-zero if anything is missing.
+its own and exits non-zero if anything is missing. The plugin targets are the exception: they
+stop when `claude` is missing, since they have nothing to run without it.
 
 | Command | Needed by | Get it |
 |---|---|---|
@@ -62,6 +72,7 @@ its own and exits non-zero if anything is missing.
 | `gh` | `/push`, `/codebase-maintenance`, both increment skills | https://cli.github.com |
 | `python3` | `/codebase-maintenance`, `/claude-customizations`, the plugin hooks | https://www.python.org/downloads |
 | `openspec` | `/apply-increment`, `/apply-all-increments` | `npm install -g @fission-ai/openspec` |
+| `claude` | the plugin targets | https://claude.com/claude-code |
 
 </details>
 
