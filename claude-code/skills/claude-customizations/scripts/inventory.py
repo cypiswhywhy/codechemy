@@ -124,6 +124,17 @@ DEFAULTS: dict[str, dict[str, str]] = {
 }
 
 
+# Context cost. No tokenizer ships with the stdlib, so tokens are estimated from the character
+# count; 3.8 chars per token matches Claude's tokenizer on English markdown to roughly ±15%.
+CHARS_PER_TOKEN = 3.8
+CONTEXT_WINDOW = 200_000
+NOT_MEASURED = ("hook output printed into the session", "MCP tool schemas")
+
+
+def estimate_tokens(text: str) -> int:
+    return round(len(text) / CHARS_PER_TOKEN)
+
+
 def default_for(scope: str, key: str) -> str | None:
     if scope == "env":
         return DEFAULTS["env"].get(key, "unset")
@@ -187,9 +198,16 @@ def describe_dir_entry(path: Path, doc: Path) -> dict:
     if not entry.get("broken"):
         fields = frontmatter(doc)
         entry["description"] = fields.get("description", "")
+        # the listing line the model sees in every session; the body only arrives when the item is invoked
+        entry["listing_tokens"] = estimate_tokens(f"- {fields.get('name', path.name)}: {entry['description']}\n")
+        entry["body_tokens"] = estimate_tokens(doc.read_text(errors="replace")) if doc.is_file() else 0
         if fields.get("disable-model-invocation", "").lower() == "true":
             entry["user_only"] = True
     return entry
+
+
+def model_invocable(entries: list[dict]) -> list[dict]:
+    return [e for e in entries if not e.get("user_only") and not e.get("broken")]
 
 
 def mcp_servers(servers: dict) -> list[dict]:
@@ -263,13 +281,26 @@ def markdown_file(path: Path) -> dict | None:
     text = path.read_text(errors="replace")
     headings = [line.lstrip("#").strip() for line in text.splitlines() if line.startswith("#")]
     managed = re.findall(r"<!--\s*([\w-]+):begin\b([^>]*)-->", text)
+    includes = re.findall(r"^@(\S+)", text, re.M)
     return {
         "path": str(path),
         "lines": text.count("\n") + (0 if text.endswith("\n") or not text else 1),
+        "tokens": estimate_tokens(text),
+        "include_tokens": sum(included_tokens(path.parent, ref) for ref in includes),
         "headings": headings,
         "managed_blocks": [f"{name}{extra.split('(')[0].rstrip()}" for name, extra in managed],
-        "includes": re.findall(r"^@(\S+)", text, re.M),
+        "includes": includes,
     }
+
+
+def included_tokens(base: Path, ref: str) -> int:
+    """An @include pulls another file into the same context; count it where it is readable."""
+    target = Path(ref).expanduser()
+    path = target if target.is_absolute() else base / target
+    try:
+        return estimate_tokens(path.read_text(errors="replace"))
+    except OSError:
+        return 0
 
 
 def listing(directory: Path, doc_name: str | None) -> list[dict]:
@@ -308,6 +339,7 @@ def plugins(enabled: list[str]) -> dict:
                 "name": name, "scope": entry.get("scope"), "version": entry.get("version"),
                 "enabled": name in enabled, "install_path": entry.get("installPath"),
                 "present": bool(entry.get("installPath")) and Path(entry["installPath"]).exists(),
+                **(plugin_tokens(Path(entry["installPath"])) if entry.get("installPath") else {}),
             })
     installed_names = {p["name"] for p in plugin_list}
     return {
@@ -318,6 +350,18 @@ def plugins(enabled: list[str]) -> dict:
             for name, spec in sorted(marketplaces.items()) if isinstance(spec, dict) and not name.startswith("__")
         ],
     }
+
+
+def plugin_tokens(install_path: Path) -> dict:
+    """What the skills, commands and agents a plugin ships cost: their listing lines every session,
+    their bodies only when invoked."""
+    listing_tokens = body_tokens = 0
+    for directory, doc_name in (("skills", "SKILL.md"), ("commands", None), ("agents", None)):
+        for entry in listing(install_path / directory, doc_name):
+            if not entry.get("user_only"):
+                listing_tokens += entry.get("listing_tokens", 0)
+            body_tokens += entry.get("body_tokens", 0)
+    return {"listing_tokens": listing_tokens, "body_tokens": body_tokens}
 
 
 def global_state() -> dict | None:
@@ -418,7 +462,7 @@ def managed_scope() -> dict:
                 data = read_json(path)
                 found[str(path)] = sorted(data) if isinstance(data, dict) else "unreadable"
         if (root / "CLAUDE.md").exists():
-            found[str(root / "CLAUDE.md")] = markdown_file(root / "CLAUDE.md")["headings"]
+            found[str(root / "CLAUDE.md")] = markdown_file(root / "CLAUDE.md")
     return {"searched": [str(r) for r in roots], "files": found}
 
 
@@ -502,9 +546,47 @@ def project_scope(project: Path) -> dict:
     }
 
 
+def context_cost(data: dict) -> dict:
+    """Estimated tokens each customization adds. `always_on` is in every session's context before the
+    user types anything; `on_demand` only arrives when the model invokes the skill, command or agent."""
+    u, pr = data["user"], data["project"]
+    instructions = [u["claude_md"], u["claude_local_md"]]
+    instructions += [r for rel, r in pr["files"].items() if rel.endswith(".md") and isinstance(r, dict)]
+    instructions += [r for r in data["managed"]["files"].values() if isinstance(r, dict)]
+    rules = u["rules"] + pr["files"].get(".claude/rules", [])
+
+    invocable = model_invocable(u["skills"] + u["commands"])
+    invocable += model_invocable([e for rel in (".claude/skills", ".claude/commands") for e in pr["files"].get(rel, [])])
+    agents = u["agents"] + pr["files"].get(".claude/agents", [])
+    enabled_plugins = [p for p in u["plugins"]["installed"] if p["enabled"]]
+    active_style = next((s["values"]["outputStyle"] for s in (u["settings"], u["settings_local"])
+                         if s and s.get("values", {}).get("outputStyle")), None)
+
+    def total(entries: list[dict], field: str) -> int:
+        return sum(e.get(field, 0) for e in entries)
+
+    always_on = {
+        "instructions": sum(r["tokens"] + r["include_tokens"] for r in instructions if r) + total(rules, "body_tokens"),
+        "skill_listings": total(invocable, "listing_tokens"),
+        "agent_listings": total(agents, "listing_tokens"),
+        "plugin_listings": total(enabled_plugins, "listing_tokens"),
+        "output_style": total([e for e in u["output_styles"] if Path(e["name"]).stem == active_style], "body_tokens"),
+    }
+    on_demand = total(u["skills"] + u["commands"] + agents, "body_tokens") + total(enabled_plugins, "body_tokens")
+    on_demand += total([e for rel in (".claude/skills", ".claude/commands", ".claude/agents") for e in pr["files"].get(rel, [])], "body_tokens")
+    return {
+        "always_on": always_on,
+        "always_on_total": sum(always_on.values()),
+        "on_demand": on_demand,
+        "context_window": CONTEXT_WINDOW,
+        "estimate": f"characters / {CHARS_PER_TOKEN} tokens, roughly ±15%",
+        "not_measured": list(NOT_MEASURED),
+    }
+
+
 def inventory(project: Path) -> dict:
     user = user_scope()
-    return {
+    data = {
         "versions": versions(),
         "user": user,
         "managed": managed_scope(),
@@ -512,13 +594,11 @@ def inventory(project: Path) -> dict:
         "desktop": desktop_scope(),
         "project": project_scope(project),
     }
+    data["context_cost"] = context_cost(data)
+    return data
 
 
 # ----- implicit view ---------------------------------------------------------
-
-
-def model_invocable(entries: list[dict]) -> list[dict]:
-    return [e for e in entries if not e.get("user_only") and not e.get("broken")]
 
 
 def implicit_settings(report: dict | None) -> dict | None:
@@ -581,6 +661,10 @@ def mcp_line(server: dict) -> str:
     return f"{server['name']:<22} {target}{env}"
 
 
+def compact(count: int) -> str:
+    return f"{count / 1000:.1f}k".replace(".0k", "k") if count >= 1000 else str(count)
+
+
 def first_sentence(text: str) -> str:
     return (text or "").split(". ")[0].rstrip(".")
 
@@ -636,6 +720,25 @@ class Terminal:
             return self.dim("  (= default)")
         return self.dim(f"  default: {default}")
 
+    def tokens(self, entry: dict) -> str:
+        """Per-item cost: the listing line every session pays for, plus the body it pulls in when invoked."""
+        listing, body = entry.get("listing_tokens", 0), entry.get("body_tokens", 0)
+        if not listing and not body:
+            return ""
+        return self.dim(f"   ≈{listing} +{compact(body)} on use" if listing else f"   ≈{compact(body)}")
+
+    def context_cost(self, cost: dict) -> None:
+        self.section("Context cost", f"estimated tokens each customization adds  ·  {cost['estimate']}")
+        for key, value in cost["always_on"].items():
+            if value:
+                self.row(key.replace("_", " "), f"{value:>7,}", key_width=16, count=False)
+        share = 100 * cost["always_on_total"] / cost["context_window"]
+        self.row("always on", f"{cost['always_on_total']:>7,} tokens", key_width=16, count=False,
+                 note=self.dim(f"  {share:.1f}% of a {cost['context_window'] // 1000}k window, before you type anything"))
+        self.row("on demand", f"{cost['on_demand']:>7,} tokens", key_width=16, count=False,
+                 note=self.dim("  skill, command and agent bodies; only once invoked"))
+        self.row("not measured", self.dim(", ".join(cost["not_measured"]) + " (run-time only)"), key_width=16, count=False)
+
     def warn(self, message: str, indent: int = 4) -> None:
         print(self.fit(f"{' ' * indent}{self.paint('33', '⚠ ' + message)}"))
         self.warnings += 1
@@ -666,8 +769,9 @@ class EffectReport(Terminal):
     def source(self, text: str) -> str:
         return self.dim(f"   {tilde(text)}")
 
-    def markdown(self, label: str, report: dict, indent_headings: bool = True) -> None:
-        notes = [f"{report['lines']} lines"] + [f"managed block {b}" for b in report["managed_blocks"]] + [f"includes {i}" for i in report["includes"]]
+    def markdown(self, report: dict) -> None:
+        cost = report["tokens"] + report["include_tokens"]
+        notes = [f"{report['lines']} lines", f"≈{compact(cost)} tokens"] + [f"managed block {b}" for b in report["managed_blocks"]] + [f"includes {i}" for i in report["includes"]]
         self.row(tilde(report["path"]), self.dim(" · ".join(notes)), key_width=40)
         for heading in report["headings"]:
             print(f"      {self.dim('#')} {heading}")
@@ -679,7 +783,8 @@ class EffectReport(Terminal):
         width = min(max(len(e["name"]) for e, _ in entries), 26)
         for entry, origin in entries:  # the source is only worth a note when it is not the standard directory
             location = tilde(entry["link_target"]) if "link_target" in entry else (origin if origin.startswith(".claude") else "")
-            self.row(entry["name"], first_sentence(entry.get("description"))[:56], indent=6, key_width=width, note=self.source(location) if location else "")
+            self.row(entry["name"], first_sentence(entry.get("description"))[:56], indent=6, key_width=width,
+                     note=self.tokens(entry) + (self.source(location) if location else ""))
 
     def render(self) -> None:
         d = self.data
@@ -698,17 +803,15 @@ class EffectReport(Terminal):
         self.begin("Instructions", "what every session is told")
         for report in (u["claude_md"], u["claude_local_md"]):
             if report:
-                self.markdown("user", report)
-        managed_md = {p: k for p, k in d["managed"]["files"].items() if p.endswith("CLAUDE.md")}
-        for path, headings in managed_md.items():
-            self.row(path, self.dim("managed"), key_width=40)
-            for heading in headings:
-                print(f"      {self.dim('#')} {heading}")
+                self.markdown(report)
+        managed_md = [r for path, r in d["managed"]["files"].items() if path.endswith("CLAUDE.md")]
+        for report in managed_md:
+            self.markdown(report)
         if not managed_md:
             self.row("managed CLAUDE.md", self.dim("none"), key_width=40, count=False)
-        project_md = [(rel, r) for rel, r in pr["files"].items() if rel.endswith(".md") and r]
-        for rel, report in project_md:
-            self.markdown(rel, report)
+        project_md = [r for rel, r in pr["files"].items() if rel.endswith(".md") and r]
+        for report in project_md:
+            self.markdown(report)
         if not project_md:
             self.row("project CLAUDE.md", self.dim(f"none in {tilde(pr['path'])}"), key_width=40, count=False)
         rules = [(e, tilde(str(CONFIG_DIR / "rules"))) for e in u["rules"]] + [(e, ".claude/rules") for e in pr["files"].get(".claude/rules", [])]
@@ -773,7 +876,8 @@ class EffectReport(Terminal):
                 src = market.get("repo") or market.get("url") or market.get("path") or market.get("source")
                 origin = f"marketplace {src}" + (f"@{market['ref']}" if market.get("ref") else "") + (" (auto-update)" if market["auto_update"] else "")
             state = "" if plugin["enabled"] else "  disabled"
-            self.row("plugin", f"{plugin['name']:<40} {plugin['version']}  {self.dim(plugin['scope'] + state)}", key_width=10, note=self.source(origin))
+            self.row("plugin", f"{plugin['name']:<40} {plugin['version']}  {self.dim(plugin['scope'] + state)}", key_width=10,
+                     note=self.tokens(plugin) + self.source(origin))
             if not plugin["present"]:
                 self.warn("plugin files missing from the plugin cache", indent=8)
         for name in u["plugins"]["enabled_but_not_installed"]:
@@ -793,6 +897,7 @@ class EffectReport(Terminal):
         self.close("Tools")
 
         if self.implicit:
+            self.context_cost(d["context_cost"])
             self.summary()
             return
 
@@ -854,6 +959,7 @@ class EffectReport(Terminal):
         if self.items == 0:
             self.none("none")
         self.close("Leftovers")
+        self.context_cost(self.data["context_cost"])
         self.summary()
 
     def summary(self) -> None:
@@ -898,7 +1004,7 @@ class LocationReport(Terminal):
     def markdown(self, title: str, report: dict | None) -> None:
         if not report:
             return
-        notes = [f"{report['lines']} lines"]
+        notes = [f"{report['lines']} lines", f"≈{compact(report['tokens'] + report['include_tokens'])} tokens"]
         notes += [f"managed block {b}" for b in report["managed_blocks"]]
         notes += [f"includes {i}" for i in report["includes"]]
         self.group(title, f"{tilde(report['path'])}  ·  {' · '.join(notes)}")
@@ -917,7 +1023,8 @@ class LocationReport(Terminal):
                 tags.append("user-invoked only")
             if entry.get("has_skill_md") is False:
                 tags.append("no SKILL.md")
-            self.row(f"{entry['name']:<{width}}", (self.dim(f"[{', '.join(tags)}] ") if tags else "") + first_sentence(entry.get("description")), key_width=width)
+            self.row(f"{entry['name']:<{width}}", (self.dim(f"[{', '.join(tags)}] ") if tags else "") + first_sentence(entry.get("description")),
+                     key_width=width, note=self.tokens(entry))
             if entry.get("broken"):
                 self.warn(f"broken link → {tilde(entry['link_target'])}", indent=6 + width)
             elif "link_target" in entry:
@@ -1008,7 +1115,10 @@ class LocationReport(Terminal):
         self.section("Managed scope", "enterprise policy")
         if data["managed"]["files"]:
             for path, keys in data["managed"]["files"].items():
-                self.row(path, ", ".join(keys) if isinstance(keys, list) else keys, key_width=len(path))
+                if isinstance(keys, dict):
+                    self.markdown(path, keys)
+                else:
+                    self.row(path, ", ".join(keys) if isinstance(keys, list) else keys, key_width=len(path))
         else:
             self.none("none; searched " + ", ".join(data["managed"]["searched"]))
 
@@ -1066,6 +1176,8 @@ class LocationReport(Terminal):
             self.group("Remembered for this project", tilde(GLOBAL_STATE.as_posix()))
             for key, value in pr["global_state_entry"].items():
                 self.row(key, json.dumps(value), key_width=24)
+
+        self.context_cost(data["context_cost"])
 
         self.section("Summary")
         warnings = self.paint("33", f"{self.warnings} to look at (⚠)") if self.warnings else "nothing flagged"

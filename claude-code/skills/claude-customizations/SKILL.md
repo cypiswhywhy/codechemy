@@ -1,6 +1,6 @@
 ---
 name: claude-customizations
-description: Audit every Claude Code customization on this machine, in both the CLI and the Claude Desktop app, and report exactly how the environment differs from a fresh install. Has a short "implicit" view limited to what shapes a session without the user invoking it (hooks, CLAUDE.md, model-invocable skills, agents, plugins, MCP servers, permissions, env). Runs a read-only inventory script over the user config dir, the global state file, managed settings, environment variables, the Desktop app's config, and the current project, then explains each item and flags anomalies (broken skill links, unregistered hook scripts, plugins enabled but not installed, leftover files). Use when the user says "/claude-customizations", "what have I customized in Claude Code", "audit my Claude setup", "diff my setup against a clean install", "what's in my ~/.claude", "what affects my sessions without me asking", "what runs on its own in Claude Code", or before cleaning up or migrating a Claude Code environment. Changes nothing.
+description: Audit every Claude Code customization on this machine, in both the CLI and the Claude Desktop app, and report exactly how the environment differs from a fresh install. Has a short "implicit" view limited to what shapes a session without the user invoking it (hooks, CLAUDE.md, model-invocable skills, agents, plugins, MCP servers, permissions, env). Runs a read-only inventory script over the user config dir, the global state file, managed settings, environment variables, the Desktop app's config, and the current project, then explains each item, estimates the tokens each one adds to a session's context (always-on vs only-when-invoked), and flags anomalies (broken skill links, unregistered hook scripts, plugins enabled but not installed, leftover files). Use when the user says "/claude-customizations", "what have I customized in Claude Code", "audit my Claude setup", "diff my setup against a clean install", "what's in my ~/.claude", "what affects my sessions without me asking", "what runs on its own in Claude Code", "what is eating my context window", "how many tokens do my skills cost", or before cleaning up or migrating a Claude Code environment. Changes nothing.
 ---
 
 # Claude Code customizations audit
@@ -50,7 +50,7 @@ that looks like a credential; never paste raw config files into the conversation
 "double-check" it.
 
 **Default layout: by effect.** One line of versions (with a warning when Desktop bundles
-an older Claude Code than the CLI), then six sections, each answering one question. The
+an older Claude Code than the CLI), then seven sections, each answering one question. The
 source path is a dim column on every row, so "where do I change this" is still answered.
 Everything listed is absent on a fresh install.
 
@@ -61,16 +61,45 @@ Everything listed is absent on a fresh install.
 | Automation | What runs without asking? | hooks from every settings file, scheduled tasks, skills and commands the model may invoke on its own, agents. |
 | Tools | What can the agent reach? | plugins with their marketplace, MCP servers from `~/.claude.json`, `.mcp.json`, Claude Desktop and managed policy, Desktop extensions. Says `none` when there are no MCP servers. |
 | Interface | What only changes the UI? | `tui`, status line and other display settings, `~/.claude.json` preferences, keybindings, themes, workflows, skills marked user-invoked only, Desktop preferences (count and sample). |
+| Context cost | What does it cost per session? | estimated tokens: instructions, skill/agent/plugin listings and the active output style that load into every session, the pool that only loads when invoked, and what cannot be measured. Printed in all three views. |
 | Leftovers | What owns nothing? | unregistered hook scripts, broken skill links, `settings.json` backups (one line), unrecognized files in the config dir, remembered projects whose directory is gone. A file whose name matches a managed block or hook script is attributed ("owned by the X bundle") instead of flagged. |
 
-`--implicit` prints Instructions, Behaviour, Automation and Tools only, on top of the item
-filter described above.
+`--implicit` prints Instructions, Behaviour, Automation, Tools and Context cost only, on top
+of the item filter described above.
 
 **`--by-location`** keeps the former layout: Versions, User scope (`~/.claude` and
 `~/.claude.json`), Managed scope, Environment variables, Claude Desktop, Project scope,
 in override order. Use it when the user asks about a place ("what is in my `~/.claude`",
 "what does this project add") or is cleaning up or migrating a machine, where seeing
 one directory at a time is what matters. The JSON output is the same for both layouts.
+
+## Context cost
+
+Every item that reaches the model carries a token price, and the report separates two kinds:
+
+- **Always on** — in the context of every session before the user types: `CLAUDE.md` files (with
+  their `@includes`), rules, the *name and description* of each skill, command and agent the model
+  may invoke, the same for skills shipped by enabled plugins, and the active output style.
+- **On demand** — the *body* of a skill, command or agent. It costs nothing until the model
+  invokes it, so a long SKILL.md is cheap and a long description is not.
+
+Per-item rows carry `≈153 +1.7k on use`: the listing line, then the body it pulls in when invoked.
+
+**Numbers are estimates.** No tokenizer ships with Python, so the script counts characters and
+divides by 3.8 — within roughly ±15% for English markdown. Treat them as relative sizes, not
+billing. Say so if the user asks for a precise figure.
+
+**Two things the script cannot measure**, both of which can be larger than everything it can:
+
+- Hook output printed into the session (`SessionStart`, `UserPromptSubmit`). The script will not
+  run a hook to find out. If a `SessionStart` hook prints a ruleset, say that its text is in every
+  context and is not in the total.
+- MCP tool schemas. Each connected server adds one JSON schema per tool, fetched from the server;
+  a chatty server can cost thousands of tokens. Not in the total either.
+
+When the user is trimming context, rank the always-on items by tokens: a long description on a
+rarely used skill, or a plugin whose skills all load their listing, costs more per session than a
+1,000-line SKILL.md that is never invoked.
 
 ## Step 2 — Interpret, don't just relay
 
@@ -104,6 +133,9 @@ Lead with one or two sentences: how far this machine is from a clean install, an
 single most important anomaly if there is one. Then the grouped inventory as a short
 list per section, anomalies bolded at the top of their section, skipping sections that
 are empty. Keep values out of prose; a path, count or version goes on its own line.
+
+When the user asked about context or token cost, lead with the always-on total and the
+percentage of the window, then the three largest contributors, then the two unmeasured items.
 
 End with the cleanup candidates as a bulleted list the user can say yes or no to, one
 line each with the reason ("6 settings.json backups from earlier installers, newest

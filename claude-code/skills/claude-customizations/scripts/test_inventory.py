@@ -200,6 +200,54 @@ class InventoryCase(unittest.TestCase):
         self.assertEqual(user["global_state"]["preferences"], {})
         self.assertEqual([m["name"] for m in user["global_state"]["mcp_servers"]], ["srv"])
 
+    def test_context_cost_separates_always_on_from_on_demand(self) -> None:
+        (self.config / "CLAUDE.md").write_text("# Rules\n" + "always in context. " * 100)
+        (self.config / "settings.json").write_text(json.dumps({"outputStyle": "terse"}))
+        styles = self.config / "output-styles"
+        styles.mkdir()
+        (styles / "terse.md").write_text("be terse. " * 50)
+        skills = self.config / "skills"
+        for name, flag in (("auto", ""), ("manual", "disable-model-invocation: true\n")):
+            (skills / name).mkdir(parents=True)
+            (skills / name / "SKILL.md").write_text(f"---\nname: {name}\n{flag}description: a description\n---\n" + "body. " * 400)
+        (self.config / "agents").mkdir()
+        (self.config / "agents" / "helper.md").write_text("---\nname: helper\ndescription: helps\n---\nlong instructions. " * 100)
+
+        data = self.run_inventory()
+        skill = {s["name"]: s for s in data["user"]["skills"]}["auto"]
+        self.assertGreater(skill["listing_tokens"], 0)
+        self.assertGreater(skill["body_tokens"], 10 * skill["listing_tokens"])
+
+        cost = data["context_cost"]
+        always = cost["always_on"]
+        self.assertEqual(always["instructions"], data["user"]["claude_md"]["tokens"])
+        self.assertEqual(always["skill_listings"], skill["listing_tokens"])  # the user-invoked skill is not listed
+        self.assertEqual(always["output_style"], data["user"]["output_styles"][0]["body_tokens"])
+        self.assertEqual(cost["always_on_total"], sum(always.values()))
+        self.assertGreater(cost["on_demand"], cost["always_on_total"])  # both skill bodies plus the agent
+        self.assertTrue(cost["not_measured"])
+
+    def test_context_cost_counts_includes_and_project_instructions(self) -> None:
+        (self.config / "CLAUDE.md").write_text("@shared.md\n")
+        (self.config / "shared.md").write_text("included text. " * 50)
+        (self.project / "CLAUDE.md").write_text("project text. " * 50)
+
+        data = self.run_inventory()
+        self.assertGreater(data["user"]["claude_md"]["include_tokens"], 50)
+        self.assertEqual(
+            data["context_cost"]["always_on"]["instructions"],
+            data["user"]["claude_md"]["tokens"] + data["user"]["claude_md"]["include_tokens"]
+            + data["project"]["files"]["CLAUDE.md"]["tokens"],
+        )
+
+    def test_context_cost_is_reported_in_the_text_views(self) -> None:
+        (self.config / "CLAUDE.md").write_text("# Rules\n" + "always in context. " * 100)
+
+        for args in ((), ("--implicit",), ("--by-location",)):
+            text = self.text(*args)
+            self.assertIn("Context cost", text)
+            self.assertRegex(text, r"always on\s+[\d,]+ tokens")
+
     def test_leftover_attribution(self) -> None:
         (self.config / "CLAUDE.md").write_text("<!-- practices:begin v1 -->\n# x\n<!-- practices:end -->\n")
         (self.config / "hooks").mkdir()
@@ -226,7 +274,7 @@ class InventoryCase(unittest.TestCase):
 
         effect = self.text()
         self.assertEqual([l[2:].split("  ")[0] for l in effect.splitlines() if l.startswith("▌")],
-                         ["Instructions", "Behaviour", "Automation", "Tools", "Interface", "Leftovers", "Summary"])
+                         ["Instructions", "Behaviour", "Automation", "Tools", "Interface", "Leftovers", "Context cost", "Summary"])
         self.assertRegex(effect, r'model\s+"opus"')
         self.assertRegex(effect, r"hook\s+Stop\s+echo hi")
         self.assertIn("⚠ shims/", effect)
@@ -234,7 +282,7 @@ class InventoryCase(unittest.TestCase):
 
         implicit = self.text("--implicit")
         self.assertEqual([l[2:].split("  ")[0] for l in implicit.splitlines() if l.startswith("▌")],
-                         ["Instructions", "Behaviour", "Automation", "Tools", "Summary"])
+                         ["Instructions", "Behaviour", "Automation", "Tools", "Context cost", "Summary"])
         self.assertNotIn("fullscreen", implicit)
 
         location = self.text("--by-location")
