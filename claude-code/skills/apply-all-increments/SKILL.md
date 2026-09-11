@@ -10,7 +10,8 @@ This skill is the loop around it. It walks the user through the entire change, f
 proposal still valid" to "archived", and the user's only manual step is merging each PR.
 Everything else is delegated: the increment to `/apply-increment`, the PR and its review to
 `/push`, the archive to `/opsx:archive`. Nothing is held in the session: ticked tasks are on
-main and open PRs are on GitHub, so an interrupted run resumes where it stopped.
+main, open PRs are on GitHub and merged ones are in the run log, so an interrupted or compacted
+run resumes where it stopped and still reports every increment.
 
 Requirements: the `openspec` CLI, `gh`, the `/apply-increment` and `/push` skills, and a clean
 working tree.
@@ -57,8 +58,12 @@ working tree.
    more; if it is still not merged, stop and report.
 
 6. **Return to main.** Check out the default branch, `git pull --ff-only`, delete the local
-   increment branch. Announce `Increment k/m merged: <group name>. Next: <group name>` and go to
-   step 4. When no unchecked task remains, go to step 7.
+   increment branch. Append the merged PR to the run log,
+   `.git/apply-all-increments/<change>.log` (create the directory), one line of
+   `<k/m, or "archive"> | <group name> | <PR url> | +N / -M`. It lives under `.git` so it never
+   dirties the working tree that step 4 requires clean, and never needs a `.gitignore` entry.
+   Announce `Increment k/m merged: <group name>. Next: <group name>` and go to step 4. When no
+   unchecked task remains, go to step 7.
 
 7. **Archive.** Every group is on main, so the archive gets its own branch,
    `chore/<change>-archive`. Invoke `/opsx:archive <change>` when it is available, since it also
@@ -67,10 +72,12 @@ working tree.
    `chore(<change>): archive change`, hand off to `/push`, ask for the merge as in step 5, return
    to main as in step 6.
 
-8. **Summary.** Change name; one line per increment with group name, PR URL and diff shape from
-   `/apply-increment`'s report; the total diff shape; the archive location and spec sync status;
-   artifact edits made in step 2; anything declined or skipped along the way. The change is on
-   main and archived, so there is no next command to give.
+8. **Summary.** Read the run log and take the per-increment lines from it rather than from the
+   session, so a compacted run reports as completely as an uninterrupted one. Change name; one
+   line per increment with group name, PR URL and diff shape; the total diff shape; the archive
+   location and spec sync status; artifact edits made in step 2; anything declined or skipped
+   along the way. Then delete the run log. The change is on main and archived, so there is no
+   next command to give.
 
 ## Stopping and resuming
 
@@ -78,8 +85,9 @@ working tree.
   resolve it, when `/push` reaches its review cap, or when a PR is still unmerged after the second
   ask. Report exactly where: which increment, which step, what the user must do, and that
   `/apply-all-increments <change>` resumes from there.
-- Step 3 makes resuming safe: the tasks file on main says which groups are done and GitHub says
-  which PR is waiting, so a fresh session or a compacted context loses nothing.
+- Step 3 makes resuming safe: the tasks file on main says which groups are done, GitHub says
+  which PR is waiting and the run log says what each merged increment was, so a fresh session or
+  a compacted context loses nothing. A resumed run appends to the existing log.
 
 ## Rules
 
