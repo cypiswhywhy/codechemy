@@ -31,8 +31,9 @@ working tree.
      point to `/opsx:continue`.
    - Read the proposal, design, specs and tasks. List the files, modules and dependencies they
      name and check each against the tree. Look for renamed or deleted files, a dependency that
-     is gone, a task whose work already landed another way, and a group that now exceeds the
-     increment budget. `git log --oneline <last commit under openspec/changes/<name>>..origin/main
+     is gone, a task whose work already landed another way, and a group that no longer maps to
+     one shippable piece of value.
+     `git log --oneline <last commit under openspec/changes/<name>>..origin/main
      -- <paths named in design>` shows what changed underneath the design.
    - Report `Change still valid` or the discrepancies, each with a proposed edit to the tasks or
      design file. Apply the edits the user agrees to on a branch

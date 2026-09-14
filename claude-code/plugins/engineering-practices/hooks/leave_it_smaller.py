@@ -39,7 +39,7 @@ def _env_number(name: str, default: float) -> float:
 # MAX_RATIO of that count read as "add-only growth".
 MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
 MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
-# Total changed lines from which the change reads as "large; land an increment".
+# Total changed lines from which to look for a separately shippable increment.
 LARGE = int(_env_number("LEAVE_IT_SMALLER_LARGE", 400))
 # Upper bound on blocked stops per session.
 MAX_NUDGES = int(_env_number("LEAVE_IT_SMALLER_MAX_NUDGES", 2))
@@ -66,8 +66,10 @@ GROWTH_MESSAGE = (
     "in your summary, with the diff shape."
 )
 LARGE_MESSAGE = (
-    "This change is already {total} lines. Land what is complete as its own commit (or PR) "
-    "before adding more, and state in your summary how the remainder is split into increments."
+    "This change is already {total} lines. Check whether it holds more than one independently "
+    "shippable piece of value: if it does, land the complete one as its own commit (or PR) "
+    "before adding more, and say how the rest is split. If it is one piece of value, keep it "
+    "whole - size alone is not a reason to split it - and say so in your summary."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "

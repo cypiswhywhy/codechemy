@@ -65,7 +65,8 @@ clone of it gets the plugin with no command at all.
   touches. Tidy as you go, replace don't accumulate, delete don't deprecate, no defensive code
   the task does not need, prove then delete, a scope boundary, and the diff shape in every summary.
 - **20-small-increments.md**: refactor first, then feature, then follow-ups; cleanup in its own
-  commits; about 400 changed lines is where you land what is complete; one task group per PR.
+  commits; each landing point is one independently shippable piece of value, whatever its size;
+  one task group per PR.
   The [`/apply-increment`](../../skills/apply-increment/SKILL.md) and
   [`/apply-all-increments`](../../skills/apply-all-increments/SKILL.md) skills carry this out for
   an OpenSpec project; they ship outside the plugin because they need the `openspec` CLI.
@@ -91,7 +92,7 @@ untracked files count as new, binaries are ignored) and acts per stop:
 |---|---|
 | no repository or no change | silent |
 | existing files gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and a tidy-pass request |
-| total change ≥ 400 lines | **block once per session** asking to land what is complete as an increment |
+| total change ≥ 400 lines | **block once per session** asking whether a complete, separately shippable increment is in there |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files` |
 
 Bounded by construction: never while the agent is already continuing because of a stop hook,
@@ -103,7 +104,7 @@ shown to you but the agent is not interrupted. `session-start` tells the agent t
 |---|---|---|
 | `LEAVE_IT_SMALLER_MIN_ADDED` | `40` | added lines in existing files before "growth" can trigger |
 | `LEAVE_IT_SMALLER_MAX_RATIO` | `0.10` | deletions/additions below which growth is "add-only" |
-| `LEAVE_IT_SMALLER_LARGE` | `400` | total changed lines that read as "large; land an increment" |
+| `LEAVE_IT_SMALLER_LARGE` | `400` | total changed lines from which to look for a shippable increment |
 | `LEAVE_IT_SMALLER_MAX_NUDGES` | `2` | blocked stops per session |
 | `LEAVE_IT_SMALLER_DISABLE` | unset | `1` silences both events |
 
