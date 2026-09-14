@@ -123,6 +123,7 @@ class HookCase(unittest.TestCase):
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("already 500 lines", first["reason"])
+        self.assertIn("independently shippable", first["reason"])
         (self.repo / "b.py").write_text(lines(520))
         second = self.run_hook("stop")
         self.assertNotIn("decision", second)
