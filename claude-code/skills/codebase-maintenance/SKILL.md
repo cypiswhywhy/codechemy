@@ -287,7 +287,9 @@ PR of wasted work and review rather than one line:
 
 - It breaks a public API or any documented contract.
 - It is a **dependency major**.
-- One logical change exceeds roughly 15 files or 400 non-deletion lines.
+- One logical change exceeds roughly 15 files or 400 non-deletion lines. The question is
+  whether the scope is right, not whether to split it: one shippable piece of value is
+  landed whole, however large it is.
 - It is a `PERF` claim with no measurement behind it — ask whether to benchmark first.
 - It is a structural `PRACTICE` change and you cannot name the concrete thing it makes
   possible. That inability *is* the finding failing its own test.
