@@ -1,6 +1,6 @@
 ---
 name: apply-increment
-description: Implement the next small increment of an OpenSpec change as its own commit and PR, instead of the whole tasks.md in one run. Trigger on "/apply-increment", "apply the next increment", "implement the next task group", "ship this change in small PRs", or when /opsx:apply would produce a change of more than ~400 lines. Also seeds the increment rules into the project's openspec/config.yaml once, with the user.
+description: Implement the next small increment of an OpenSpec change as its own commit and PR, instead of the whole tasks.md in one run. Trigger on "/apply-increment", "apply the next increment", "implement the next task group", "ship this change in small PRs", or when a change should land as one PR per shippable increment instead of one run. Also seeds the increment rules into the project's openspec/config.yaml once, with the user.
 ---
 
 # Apply increment
@@ -30,7 +30,10 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
    rules:
      tasks:
        - Group tasks under `## N. <increment name>` headings so that each group is one
-         independently shippable, reviewable PR of roughly 400 changed lines or fewer.
+         independently shippable, reviewable PR: one piece of value, complete and useful on its
+         own once merged. Size follows from the value, so a group may be 40 changed lines or
+         1000; never split one piece of value across groups to make them smaller, and never
+         bundle two of them to save a round trip.
          Put behaviour-preserving refactors in their own group, before the feature they enable.
    operations:
      apply:
@@ -51,9 +54,11 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
 
 4. **Find the next increment.** Task groups are the `## N. <name>` (or `### `) headings in the
    tasks file; the next increment is the first group with an unchecked task. If the tasks file
-   has no groups, or the next group obviously exceeds the budget (many files, several
-   subsystems), propose a regrouping of the *tasks file only* (no code), show it, and apply it
-   when the user agrees. Never regroup silently. Announce
+   has no groups, or the next group holds more than one piece of value (two features, unrelated
+   subsystems), or less than one (its value only works once a later group lands), propose a
+   regrouping of the *tasks file only* (no code), splitting or merging groups; show it, and
+   apply it when the user agrees. Size is not a seam: a large group that delivers one piece of
+   value stays one increment. Never regroup silently. Announce
    `Increment k/m: <group name> (t tasks)`.
 
 5. **Branch.** The working tree must be clean; if it is not, stop and say what is pending.
@@ -87,4 +92,7 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
 - The tasks file is the single progress record; a task is done only when checked there.
 - Do not edit `openspec/config.yaml` without the user's answer in step 2, and ask only once.
 - Keep every increment behaviour-complete for its tasks; "half of task 3.2" is never a
-  landing point. If a task cannot be finished within the budget, that is a regrouping.
+  landing point. A group too large for one run is a regrouping only when it holds more than one
+  shippable piece of value; otherwise it is implemented whole.
+- Fewer complete increments beat more partial ones. Never create a group whose PR nobody could
+  merge and use on its own, and never treat the number of PRs as a measure of progress.
