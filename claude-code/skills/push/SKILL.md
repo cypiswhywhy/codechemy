@@ -16,6 +16,40 @@ automated code review as the quality gate. The user merges manually — never me
    output (staged, unstaged, or untracked files), STOP immediately and tell the user
    they must commit (or stash/clean) first. Do NOT commit on their behalf at this stage.
 
+## Step 0 — Self-review before the first push
+
+Run this once, before the first push of a branch. Skip it on re-pushes within the
+review loop (Step 7 already re-runs the review).
+
+Every cycle of the loop costs 4–6 minutes of waiting plus a triage pass, so a defect
+the reviewer finds is far more expensive than the same defect found here. These are
+the checks that most often come back as review comments, and each is mechanical:
+
+1. **Every symbol you named exists.** Grep for each class, method, function, field,
+   flag and file path the diff mentions — in commit messages and prose as much as in
+   code. A name that reads like the right one is the commonest failure: it came from
+   what the thing *ought* to be called, not from the tree.
+2. **Every line number and anchor still resolves.** They drift, and a citation
+   the same change moves is dead on arrival. Prefer the symbol over the line.
+3. **Every absolute has been checked against its counterexample.** For each "only",
+   "never", "always", "every", "cannot" in the diff, find the case that would
+   contradict it. If one exists, name it in the same sentence or delete the absolute.
+4. **No claim asserts something the code cannot observe.** A record written before
+   an operation cannot attest to its outcome; a pre-flight check cannot prove
+   delivery; a count of what was attempted is not a count of what succeeded. State
+   what the code actually knows.
+5. **A new rule applies at every site that asks the same question.** Grep for the
+   old predicate across the tree, not just the call site you were editing.
+6. **Tests assert the behaviour, not a proxy for it.** A key being present is not
+   its value being right; a call being made is not the effect happening.
+
+Fix what this finds and fold it into the commits you are about to push. Do not open
+a PR to fix your own pre-push findings.
+
+This step is not a substitute for the review loop and does not shorten the cap — it
+removes the findings that would otherwise consume cycles, so the cycles that do run
+are spent on things you could not have found yourself.
+
 ## Step 1 — Push
 
 ```bash
@@ -37,11 +71,10 @@ Derive title/body from `git log <default-branch>..HEAD`. End the body with:
 ## Step 3 — Request Copilot code review
 
 The repo may already auto-request Copilot via a branch ruleset ("Automatically
-request Copilot code review" — see `github/README.md` in the codechemy repo). That
-ruleset is independent of the manual request below: if it is configured the
-manual request is merely redundant, and if it is absent the manual request still
-works. Never treat ruleset configuration as an explanation for a request that
-looks like it failed.
+request Copilot code review", set in Settings → Rules → Rulesets). That ruleset is
+independent of the manual request below: if it is configured the manual request is
+merely redundant, and if it is absent the manual request still works. Never treat
+ruleset configuration as an explanation for a request that looks like it failed.
 
 **Pre-check — has Copilot already reviewed the current head commit?**
 
@@ -138,6 +171,37 @@ For EACH thread, read the comment in the context of the actual code and decide:
   project conventions, or is stylistic churn. Do NOT change code just to appease
   the reviewer.
 
+A comment being *correct* is not sufficient reason to act on it. The question is
+whether it changes behaviour, an interface, or a decision someone will act on.
+Tightening prose in a document the next change supersedes is churn even when the
+tightening is accurate, and it grows the diff the reviewer then re-reads. If you
+find yourself accepting nearly every comment across several cycles, you have stopped
+triaging — a healthy loop declines some.
+
+### Generalize before you fix
+
+A review comment points at one site. Before fixing that site, decide whether it is an
+*instance of a class* — and if it is, fix the whole class in one commit:
+
+1. Name the class in one sentence ("a record described as proving an outcome it was
+   written before", "a symbol cited from inference rather than grep").
+2. Grep the whole change for it. Derive the pattern from the class, not from the
+   comment's wording: the same defect is usually phrased differently elsewhere, so a
+   pattern copied from the quoted line will miss its siblings. Widen the pattern until
+   it over-matches, then read the hits.
+3. Fix every hit in one commit, and say in the reply how many sites there were.
+4. Re-run the grep and confirm it comes back empty before pushing.
+
+This matters more than it sounds. A class fixed one site per cycle costs one full
+cycle per site; the same class swept costs one. A duplicated claim — the same
+assertion restated in several files, which planning and spec formats invite —
+cannot be fixed at one site by construction, because the reviewer will find the next
+copy on the next pass.
+
+If the class has recurred before, it is already named in
+`.claude/code-review-lessons.md` (Step 10) — read the relevant section before
+sweeping, since a past occurrence usually names the grep that finds it.
+
 Whatever the decision, **reply in the thread** explaining it — one or two sentences
 ("Fixed in <short-sha>." / "Not addressing: <reason>."). Reply via REST using the
 first comment's `databaseId`:
@@ -186,11 +250,18 @@ Copilot code review reads three kinds of instruction file:
   the file's frontmatter.
 - `AGENTS.md` — repo-level agent instructions, also honoured by code review.
 
-Templates for the first two live in the `codechemy` repo at
-`github/instructions_templates/` — use a local checkout if you have
-one, otherwise
-<https://github.com/cypiswhywhy/codechemy/tree/main/github/instructions_templates>.
-That path is in *that* repo, not the one you are reviewing.
+Write any proposal for this repo, from what the review actually did here. If the
+user keeps instruction-file templates of their own, they will say so — do not go
+looking for a template source, and do not name one.
+
+One case is worth proposing on sight: a repo with a directory of planning or
+specification documents (`openspec/`, `docs/adr/`, `specs/`) and no path-scoped file
+covering it. The repo-wide instructions describe code, so the reviewer applies
+code-review standards to prose — the findings come back correct and low-value, one
+restatement of the same claim per cycle, and the loop does not converge. A
+path-scoped file that says what those documents are, what matters in them (anchors
+naming symbols that do not exist, claims the code does not support, a requirement
+contradicting another) and what does not (wording, test coverage) fixes it.
 
 Once the loop is green, read whichever of those exist against the repo you just
 worked in and consider whether they should change. Any one of these is reason
@@ -232,8 +303,10 @@ Two cautions:
 
 Having nothing to propose is a fine outcome; say so and stop rather than
 manufacturing a suggestion. If no repo-wide file exists at all, propose creating
-`.github/copilot-instructions.md` from the `copilot-instructions.md` template
-above, filled in for this repo.
+`.github/copilot-instructions.md`, drafted from this repo: what it is and what it is
+built with, and what the review should flag — correctness and regression risk,
+security-sensitive changes, missing tests when logic changes, and whatever this
+review showed the reviewer needs telling.
 
 ## Step 10 — Record recurring mistakes of your own (non-blocking)
 
@@ -247,12 +320,12 @@ pattern is invisible unless it was written down as it happened.
 
 **Every run, once green.** For each addressed comment, ask whether it represents a
 *class* of mistake likely to recur rather than a one-off slip. If it does, append
-it to the repo-tracked ledger at `.claude/code-review-lessons.md` — creating it
-from the `code-review-lessons.md` template in the same templates directory as
-Step 9's, if absent. One `##` section per class, and under it one bullet per
-occurrence giving the date, the PR URL, and a short phrase naming the instance. If
-the class already has a section, add a bullet to it — never open a near-duplicate
-section.
+it to the repo-tracked ledger at `.claude/code-review-lessons.md`, creating the file
+if absent: a title, a sentence saying it tallies recurring classes of mistake caught
+in review, and the convention below. One `##` section per class, and under it one
+bullet per occurrence giving the date, the PR URL, and a short phrase naming the
+instance. If the class already has a section, add a bullet to it — never open a
+near-duplicate section.
 
 Keeping the ledger in git is the point: every teammate running this skill
 contributes to the same tally, so a class crosses the threshold on the project's
