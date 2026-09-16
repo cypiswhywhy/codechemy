@@ -3,11 +3,12 @@ applyTo:
   - "openspec/**"
 ---
 
-These files are an OpenSpec change: a `proposal.md` (why and what), a `design.md`
-(decisions and rejected alternatives), one or more spec deltas under `specs/`
-(normative requirements and scenarios), and a `tasks.md` (the implementation
-checklist). They are planning artifacts. The code they describe is usually not in the
-same pull request, and the change is archived once it ships.
+These files are an OpenSpec change: a `proposal.md` (why and what), one or more spec
+deltas under `specs/` (normative requirements and scenarios), a `tasks.md` (the
+implementation checklist), and — where the change needed one — a `design.md`
+(decisions and rejected alternatives). They are planning artifacts. The code they
+describe is usually not in the same pull request, and the change is archived once it
+ships.
 
 Review them as a specification, not as prose. The repository-wide instructions about
 correctness, tests and performance describe code and mostly do not apply here.
