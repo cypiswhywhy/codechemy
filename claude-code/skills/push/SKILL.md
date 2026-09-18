@@ -1,12 +1,13 @@
 ---
 name: push
-description: Push the current branch to GitHub, open a PR, run the GitHub Copilot automated code review loop (address or dismiss every comment, resolve threads, re-push) until the review is green, then hand the PR back to the user for manual merge. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
+description: Push the current branch to GitHub, open a PR, run the automated code review loop (address or dismiss every comment, resolve threads, re-push) until the review is green, then hand the PR back to the user for manual merge. GitHub Copilot is the reviewer; when Copilot is unavailable — not enabled for the repo, out of quota, or silent — it falls back to the local /code-review skill. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
 ---
 
-# Push & Copilot review loop
+# Push & automated review loop
 
-Drive a branch from "ready locally" to "PR ready to merge", using GitHub Copilot
-automated code review as the quality gate. The user merges manually — never merge.
+Drive a branch from "ready locally" to "PR ready to merge", using an automated code
+review as the quality gate: GitHub Copilot where it is available, the local
+`/code-review` skill where it is not. The user merges manually — never merge.
 
 ## Preconditions (stop if not met)
 
@@ -21,8 +22,9 @@ automated code review as the quality gate. The user merges manually — never me
 Run this once, before the first push of a branch. Skip it on re-pushes within the
 review loop (Step 7 already re-runs the review).
 
-Every cycle of the loop costs 4–6 minutes of waiting plus a triage pass, so a defect
-the reviewer finds is far more expensive than the same defect found here. These are
+Every cycle of the loop costs a triage pass, and on the Copilot path 4–6 minutes of
+waiting with it, so a defect the reviewer finds is more expensive than the same defect
+found here. These are
 the checks that most often come back as review comments, and each is mechanical:
 
 1. **Every symbol you named exists.** Grep for each class, method, function, field,
@@ -105,9 +107,7 @@ gh api repos/{owner}/{repo}/issues/{num}/timeline --paginate \
 ```
 
 The request succeeded if that event is dated after your push (equivalently: the
-Copilot review count goes up later on). As secondary confirmation, the POST
-response body's own `updated_at` matches the timeline event's timestamp to the
-second.
+Copilot review count goes up later on).
 
 ⚠️ **`reviewRequests` (`gh pr view --json`) and `requested_reviewers` (REST) list
 only *pending* requests.** Copilot consumes the request within seconds, so both
@@ -115,6 +115,53 @@ read empty before a request AND after a successful one. An empty value is NOT a
 failure signal — it is not evidence in either direction. Never report the request
 as failed, and never ask the user to add the reviewer in the web UI, on the basis
 of those fields.
+
+**When the request itself says Copilot is unavailable.** Get the call right first —
+the exact login above, `[bot]` suffix included — and then read any failure of that
+well-formed POST as a fact about the repo rather than about the call: Copilot code
+review is not enabled here, so the bot is not a collaborator and the same HTTP 422
+comes back. Go to Step 3a rather than re-shaping the request.
+
+## Step 3a — Fall back to the local `/code-review` skill
+
+Copilot is the preferred reviewer because it is independent of the model that wrote
+the change. When it cannot run, a local review is a better gate than no gate.
+
+**Fall back when any one of these holds**, at whichever cycle it first holds —
+Copilot can review cycle 1 and then run out of quota by cycle 3:
+
+1. The well-formed request from Step 3 fails (see above).
+2. Copilot answers with a notice instead of a review: a review or PR comment saying
+   it could not review the pull request, or that the premium-request allowance is
+   spent. The wording varies, so match the class — a Copilot message reporting no
+   findings *because it did not look* — rather than a fixed string. A review that
+   looked and found nothing is green, not a failure.
+3. Step 4's ~20-minute wait runs out.
+
+Then, once:
+
+1. **Check the skill is there.** `/code-review` must be listed among the skills
+   available in this session. If it is not, stop here: tell the user the branch is
+   pushed and the PR is unreviewed, which of the three signals above fired, and that
+   enabling Copilot code review for the repo or waiting for the quota to reset is
+   what restores the primary gate.
+2. **Run it against the PR, posting the findings as inline comments.**
+
+   ```
+   /code-review <pr-number> high --comment
+   ```
+
+   Name the level explicitly, or the gate silently inherits whatever level the user
+   last typed. Never pass `--fix`: it applies findings without the Step 6 triage, and
+   triage is where a finding gets declined.
+3. **Record that the local reviewer owns the gate for the rest of this run.** Do not
+   re-attempt Copilot on later cycles — each attempt spends Step 4's wait to learn
+   what you already know.
+
+Then continue at **Step 5**. What the local review posts are ordinary PR review
+threads, so Steps 5–8 run as written once you account for who authored them. Step 4
+does not apply on this path: the review returns inside the session rather than
+arriving minutes later.
 
 ## Step 4 — Wait for the review
 
@@ -130,10 +177,15 @@ appears (compare `submittedAt` against the push time, or track the review count
 before/after).
 
 If nothing arrives after ~10 minutes — a deliberate margin over the measured 4–6
-minutes, not a hard deadline — confirm a `review_requested` timeline event exists
-dated after your push (the Step 3 command). If it does, the request registered:
-keep waiting instead of declaring failure. If it does not, re-request once; if the
-second request also leaves no timeline event, report to the user and stop.
+minutes — confirm a `review_requested` timeline event exists dated after your push
+(the Step 3 command). If it does, the request registered: keep waiting instead of
+declaring failure. If it does not, re-request once; if the second request also leaves
+no timeline event, the request is not reaching Copilot — go to Step 3a.
+
+A registered request is not a promise of a review: when the account is out of premium
+requests the event records normally and nothing follows it. So bound the wait at ~20
+minutes from the request. Past that, timeline event or not, treat Copilot as
+unavailable for this PR and go to Step 3a.
 
 ## Step 5 — Collect unresolved review threads
 
@@ -158,8 +210,11 @@ query($owner:String!, $repo:String!, $pr:Int!) {
 }' -f owner={owner} -f repo={repo} -F pr=<num>
 ```
 
-Work only with threads where `isResolved == false` and the first comment's author
-is the Copilot bot.
+Work only with threads where `isResolved == false` and the first comment belongs to
+the review that ran. On the Copilot path that is an author check: the Copilot bot. On
+the Step 3a path the author is the user's own account, which their own comments carry
+too — so match the comments the review posted in this run, which you have just seen,
+and leave the user's own threads alone.
 
 ## Step 6 — Triage every unresolved thread
 
@@ -228,10 +283,12 @@ If Step 6 produced any code changes:
    ending with `Co-Authored-By: Claude <noreply@anthropic.com>`.
 2. Push.
 3. Go back to Step 3 (if the ruleset has "Review new pushes" enabled the re-review
-   starts automatically; otherwise re-request it) and repeat the cycle.
+   starts automatically; otherwise re-request it) and repeat the cycle. On the Step 3a
+   path, re-run `/code-review` against the PR instead: there is nothing to request and
+   nothing to wait for.
 
-**Green condition:** the latest Copilot review on the current head commit produced
-no new comments AND there are no unresolved review threads.
+**Green condition:** the latest review from whichever reviewer ran covers the current
+head commit, produced no new comments, AND there are no unresolved review threads.
 
 **Safety cap:** run at most 8 review cycles. If it is still not green after 8,
 stop and summarize the remaining open points for the user instead of looping.
@@ -241,7 +298,15 @@ stop and summarize the remaining open points for the user instead of looping.
 When green, tell the user the PR is ready for merge and give them the PR URL.
 NEVER merge the PR yourself — merging is the user's manual step.
 
+Name the reviewer that gated it. If Step 3a ran, say which signal triggered the
+fallback and that the reviewer was the same model that wrote the change rather than an
+independent one — that changes how much the user's own read of the PR has to carry.
+
 ## Step 9 — Propose review-methodology improvements (optional, non-blocking)
+
+Copilot path only: this step tunes the files Copilot reads, and `/code-review` reads
+none of them — it reads the repo's `CLAUDE.md`. On the Step 3a path, skip to Step 10,
+where `CLAUDE.md` is already the promotion target.
 
 Copilot code review reads three kinds of instruction file:
 
@@ -311,8 +376,9 @@ review showed the reviewer needs telling.
 ## Step 10 — Record recurring mistakes of your own (non-blocking)
 
 Step 9 mines the comments you **declined** — evidence about Copilot's methodology.
-This step mines the ones you **addressed** — evidence about yours. A comment you
-accepted is a mistake you actually made, and mistakes come in classes that recur.
+This step mines the ones you **addressed** — evidence about yours, whichever reviewer
+found them. A comment you accepted is a mistake you actually made, and mistakes come
+in classes that recur.
 
 The obstacle is that every `/push` run is a fresh context. You can see a pattern
 repeat across threads inside one PR, but never across PRs, so a cross-review
@@ -374,4 +440,5 @@ call rather than a counted result.
 
 Never promote a *declined* comment this way. Encoding a false positive as a
 standing rule trains you to write worse code to satisfy a reviewer that was wrong.
-That material belongs in Step 9, aimed at the instructions file.
+That material belongs in Step 9, aimed at the instructions file — and on the Step 3a
+path, where Step 9 does not run, it is simply dropped.
