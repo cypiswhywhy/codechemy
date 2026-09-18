@@ -46,7 +46,7 @@ defaults for every project: *leave the code smaller than you found it*, *small i
 
 | Skill | What it does |
 |---|---|
-| [`/push`](claude-code/skills/push/SKILL.md) | Pushes a branch, opens a PR, iterates on the Copilot review until green |
+| [`/push`](claude-code/skills/push/SKILL.md) | Pushes a branch, opens a PR, iterates on the automated review until green — Copilot, or `/code-review` when Copilot is unavailable |
 | [`/codebase-maintenance`](claude-code/skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, revertible commits |
 | [`/claude-customizations`](claude-code/skills/claude-customizations/SKILL.md) | Read-only audit of every Claude Code customization, CLI and Desktop, against a fresh install |
 | [`/apply-increment`](claude-code/skills/apply-increment/SKILL.md) | Implements one OpenSpec task group as its own PR, then stops |

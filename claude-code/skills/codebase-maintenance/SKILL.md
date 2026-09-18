@@ -406,7 +406,7 @@ say so in the body: a reviewer needs to know they are looking at a diff that ass
 something unmerged. Independent chunks may branch from `main`.
 
 Then push, open the PR, and drive the automated review to green. If the `push` skill is
-available, invoke it — it already handles push, PR creation, and the Copilot review
+available, invoke it — it already handles push, PR creation, and the automated review
 loop. Never merge; that stays the user's.
 
 `references/delivery.md` has the PR body template, the splitting decision list, and the

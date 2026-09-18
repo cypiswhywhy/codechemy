@@ -40,7 +40,7 @@ working tree.
      `docs/<change>-revalidate`, commit them as `docs(<change>): revalidate against main`, and
      stay on that branch so step 4 builds on it. Never edit code here.
    - Announce `Plan: m increments remaining: <group names>`. Each increment is one PR round trip:
-     implementation, a Copilot review of a few minutes, and the user's merge.
+     implementation, an automated review of a few minutes, and the user's merge.
 
 3. **Detect an in-flight increment.** `gh pr list --state open --search "<change>" --json
    number,headRefName,url`. An open PR on a `*/<change>-<k>-*` branch means a previous run stopped
