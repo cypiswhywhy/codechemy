@@ -309,12 +309,12 @@ mutation($id:ID!) {
 **Every cycle ends with a table**, printed for the user before you push anything.
 One row per thread this cycle raised:
 
-| # | Finding | Type | Where | Action |
-|---|---|---|---|---|
-| 1 | Writes the manifest even on a dry run | bug | `Makefile:61` | fixed |
-| 2 | ↺ Reply count off by one after the retry fix | bug | `push.py:88` | fixed |
-| 3 | Same URL built in two places | pattern | `push.py:20` | declined — churn |
-| 4 | Says the hook runs on commit; it runs on push | false claim | `README.md:12` | fixed |
+| # | Finding | Type | Where | Origin | Action |
+|---|---|---|---|---|---|
+| 1 | Writes the manifest even on a dry run | bug | `Makefile:61` | this PR | fixed |
+| 2 | ↺ Reply count off by one after the retry fix | bug | `push.py:88` | cycle 1 | fixed |
+| 3 | Same URL built in two places | pattern | `push.py:20` | pre-existing | declined — churn |
+| 4 | Says the hook runs on commit; it runs on push | false claim | `README.md:12` | this PR | fixed |
 
 Rules for the table:
 
@@ -322,12 +322,47 @@ Rules for the table:
   reviewer's wording. Someone who has not read the PR should understand it.
 - **Type** is the Step 6 label, verbatim.
 - **Where** is `file:line`, or the file and the symbol.
+- **Origin** is which change put the defect there — see below.
 - **Action** is `fixed`, `declined — <two or three words>`, or `deferred — #<issue>`.
-- Prefix the number with `↺` when the finding is in code an earlier cycle of this
-  run introduced. Those rows are the loop paying for itself: two in one cycle means
-  your fixes are too big, so drop the sweep and take literal fixes from there on.
+- Prefix the number with `↺` on every row whose Origin is a `cycle N`. Those rows are
+  the loop paying for itself: two in one cycle means your fixes are too big, so drop
+  the sweep and take literal fixes from there on.
 
 Close the table with one line: `N findings — a fixed, b declined. Blocking left: c.`
+
+### Origin — blame the line, don't guess
+
+Whether a defect arrived with this change or was already in the tree decides what to
+do with it, and neither the comment nor your memory of writing the code is evidence.
+Ask git. For each finding with a `file:line`:
+
+```bash
+git blame -L<line>,<line> --porcelain -- <file> | head -1   # the sha that last touched it
+git merge-base --is-ancestor <sha> origin/<default-branch>  # exit 0 => already on main
+```
+
+One of four values, nothing else:
+
+| Origin | Means | How you know |
+|---|---|---|
+| `pre-existing` | the line was on the default branch before this branch existed | the ancestor check exits 0 |
+| `this PR` | a commit you wrote before the first push of this branch | branch commit, and not one of your fix commits |
+| `cycle N` | the fix commit from cycle N of this run | the sha is that cycle's `address code review:` commit |
+| `—` | no single line to blame — a missing test, a whole-file claim, a finding about something absent | blame has nothing to point at |
+
+A finding whose site is `pre-existing` but whose *trigger* is new — the old line only
+breaks because this PR now calls it — is `this PR`. Blame locates the line; you decide
+whether the change made it wrong.
+
+Two things the column is for:
+
+- **A row that says `pre-existing` is a candidate to defer**, blocking or not. It is a
+  bug in the repo, not in this change, and fixing it here widens the diff the next cycle
+  reads. File the issue, put `deferred — #<issue>` in Action, and say so in the thread.
+  Exception: this PR made it reachable, or it is a `security` finding.
+- **A table that is mostly `cycle N` means the loop is chasing itself.** Two such rows
+  already drop the sweep; a whole cycle of them means stop fixing and hand the rest to
+  the user, whatever the cycle count says.
 
 Then:
 
@@ -362,6 +397,12 @@ Close with the cycle tables, one after another, and a line totalling what was le
 undone: how many findings were declined and how many deferred to issues. Those are
 the calls the user is entitled to overrule before merging, and the table is the only
 place they appear.
+
+Add one line reading the Origin column across every cycle, because it says something
+the individual rows do not: whether this change introduced its own defects, whether
+the reviewer spent the run on repo debt this PR merely walked past, or whether the
+fixes generated the findings. For example — `Origin: 5 this PR, 2 pre-existing (both
+deferred), 1 from cycle 1's fix.`
 
 ## Step 9 — Propose review-methodology improvements (optional, non-blocking)
 
