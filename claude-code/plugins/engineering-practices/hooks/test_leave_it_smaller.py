@@ -134,11 +134,11 @@ class HookCase(unittest.TestCase):
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("already 500 lines", first["reason"])
-        self.assertIn("independently shippable", first["reason"])
-        # Still large, but the split question is asked only once per session.
+        self.assertIn("landing points you named", first["reason"])
+        # Still large, but the seam question is asked only once per session.
         (self.repo / "b.py").write_text(lines(520))
         second = self.run_hook("stop")
-        self.assertNotIn("independently shippable", second["reason"])
+        self.assertNotIn("landing points you named", second["reason"])
         # Nudge cap reached: the shape is reported, not blocked.
         (self.repo / "b.py").write_text(lines(540))
         third = self.run_hook("stop")

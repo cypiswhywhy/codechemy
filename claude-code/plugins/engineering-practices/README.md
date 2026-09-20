@@ -11,7 +11,8 @@ in every project**. Three kinds of resource that combine into one behaviour:
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
 five practices, two hooks and one skill, about four problems: agents add lines and rarely
-remove them, and turn a plan into one thousand-line PR; they write a near-copy of a helper
+remove them, and turn a plan into one thousand-line PR - or into six PRs none of which is
+useful on its own; they write a near-copy of a helper
 instead of generalising the one that already exists; they document every line they write; and
 they write the code first and the tests, if at all, afterwards.
 
@@ -70,9 +71,12 @@ clone of it gets the plugin with no command at all.
   where both callers already see it (base class, shared module, free function) rather than
   copying it; the extraction lands as its own `refactor:` commit, and is in scope even when it
   edits a file the task did not name.
-- **20-small-increments.md**: refactor first, then feature, then follow-ups; cleanup in its own
-  commits; each landing point is one independently shippable piece of value, whatever its size;
-  one task group per PR.
+- **20-small-increments.md**: name the landing points before writing, because a seam found in a
+  finished diff is a file boundary; one test for each of them (merged on its own and stopped
+  there, is someone better off with the default branch still green); commits are free and cut at
+  every coherent step, a PR costs a review cycle and is cut only at a real seam; one piece of
+  value lands whole at any size; the splits that only look like seams are named so they can be
+  refused.
   The [`/apply-increment`](../../skills/apply-increment/SKILL.md) and
   [`/apply-all-increments`](../../skills/apply-all-increments/SKILL.md) skills carry this out for
   an OpenSpec project; they ship outside the plugin because they need the `openspec` CLI.
@@ -101,7 +105,7 @@ untracked files count as new, binaries are ignored) and acts per stop:
 |---|---|
 | no repository or no change | silent |
 | the change gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
-| total change ≥ 400 lines | **block once per session** asking whether a complete, separately shippable increment is in there |
+| total change ≥ 400 lines | **block once per session** asking which landing points were named up front, and refusing a retroactive slice by file or layer as a split |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files` |
 
 Bounded by construction: never while the agent is already continuing because of a stop hook,

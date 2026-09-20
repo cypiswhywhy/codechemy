@@ -70,10 +70,13 @@ ADD_ONLY_MESSAGE = (
     "nothing can go, say which of the three you checked, with the diff shape."
 )
 LARGE_MESSAGE = (
-    "This change is already {total} lines. Check whether it holds more than one independently "
-    "shippable piece of value: if it does, land the complete one as its own commit (or PR) "
-    "before adding more, and say how the rest is split. If it is one piece of value, keep it "
-    "whole - size alone is not a reason to split it - and say so in your summary."
+    "This change is already {total} lines. Say in your summary which landing points you named "
+    "before you started, and put each through the test: merged on its own and stopped there, is "
+    "anyone better off, with main still green? One piece of value lands whole - size alone is "
+    "not a reason to split it, and slicing a finished diff by file or by layer is not a split. "
+    "If a complete, separately useful piece really is in here, land it as its own commit or PR "
+    "first and say how the rest follows. If you named no seams up front, say so, and name them "
+    "now for the work that is left."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
