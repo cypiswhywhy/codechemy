@@ -5,11 +5,12 @@
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
 Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and, when the change only added lines or is already large, blocks the
-stop with a request for a reuse-and-tidy pass or a split. The nudge is bounded: never while
-the agent is already continuing because of a stop hook, never for a diff it has already
-nudged on, and at most LEAVE_IT_SMALLER_MAX_NUDGES times per session. Otherwise the shape is
-shown to the user as a one-line system message.
+plus the working tree) and blocks the stop when it fails one of four checks - the change only
+added lines, it is already large, it edits source without touching a test in a repository that
+has tests, or the summary does not state the diff shape. The nudge is bounded: never while the
+agent is already continuing because of a stop hook, never for a diff it has already nudged on,
+each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in
+all. Otherwise the shape is shown to the user as a one-line system message.
 
 SessionStart: points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
 `## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
@@ -22,10 +23,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def _env_number(name: str, default: float) -> float:
@@ -56,6 +58,25 @@ DEFAULT_BRANCH_CANDIDATES = ("origin/HEAD", "origin/main", "origin/master", "mai
 MAX_UNTRACKED_FILES = 200
 MAX_TEXT_BYTES = 1_000_000
 
+# Directories and filename shapes that mean "this file is a test", across the common
+# conventions. Used both to spot a repository that has a harness at all and to tell a
+# behaviour change from the test that should have come with it.
+TEST_DIR_NAMES = {"test", "tests", "spec", "specs", "__tests__", "testdata"}
+TEST_NAME_PREFIXES = ("test_", "spec_")
+TEST_STEM_SUFFIXES = ("_test", "_spec", ".test", ".spec", "Test", "Tests", "Spec", "Specs")
+# Extensions that hold no behaviour, so a change confined to them needs no test.
+NON_SOURCE_SUFFIXES = {
+    "", ".md", ".markdown", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini",
+    ".cfg", ".conf", ".lock", ".csv", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico",
+    ".gitignore", ".editorconfig", ".env",
+}
+# `+45 / -8`, `+45/-8`, `+1,024 / -20`: the diff shape every summary has to end with.
+# The minus accepts the typographic dashes a Markdown summary is routinely written with,
+# or the check rejects summaries that do state the shape.
+DIFF_SHAPE_RE = re.compile(r"\+\s?[\d,]+\s*/\s*[-\u2010-\u2015\u2212]\s?[\d,]+")
+# A transcript grows for the whole session; only its tail can hold the last message.
+MAX_TRANSCRIPT_TAIL_BYTES = 256_000
+
 ADD_ONLY_MESSAGE = (
     "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
     "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
@@ -77,6 +98,19 @@ LARGE_MESSAGE = (
     "If a complete, separately useful piece really is in here, land it as its own commit or PR "
     "first and say how the rest follows. If you named no seams up front, say so, and name them "
     "now for the work that is left."
+)
+TESTS_MESSAGE = (
+    "This change edits {source_files} source file(s) and no test changed with it, in a "
+    "repository that has a test suite. Before you finish: name the behaviour this changed and "
+    "the test that now covers it. If you wrote the code first, add the test now, and check it "
+    "fails against the old behaviour before you keep it - a test that cannot fail asserts "
+    "nothing. If the change really alters no behaviour (a rename, an extraction, config, "
+    "docs), say which in your summary, with the test command you ran and its result."
+)
+SUMMARY_MESSAGE = (
+    "Your summary does not state the diff shape. End it with `+N / -M` and the files touched, "
+    "together with the tests you ran and their result. Zero removals in a change to existing "
+    "code is a smell - say why when that is the case."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
@@ -151,6 +185,34 @@ def rename_target(numstat_path: str) -> str:
     return numstat_path.split(" => ", 1)[1]
 
 
+def is_test_path(path: str) -> bool:
+    """Whether a repository-relative path is a test, across the common conventions."""
+    parts = PurePosixPath(path).parts
+    if any(part in TEST_DIR_NAMES for part in parts[:-1]):
+        return True
+    name = PurePosixPath(path).name
+    stem = name[: name.rindex(".")] if "." in name[1:] else name
+    return name.startswith(TEST_NAME_PREFIXES) or stem.endswith(TEST_STEM_SUFFIXES)
+
+
+def is_source_path(path: str) -> bool:
+    """Whether a change to this path can alter behaviour, so a test should move with it."""
+    if is_test_path(path):
+        return False
+    name = PurePosixPath(path).name
+    suffix = name[name.rindex(".") :] if "." in name[1:] else ""
+    return suffix not in NON_SOURCE_SUFFIXES
+
+
+def repo_has_tests(root: str) -> bool:
+    """Whether the repository has a test harness at all; without one there is nothing to ask for."""
+    try:
+        tracked = git(root, "ls-files").splitlines()
+    except (GitError, OSError):
+        return False
+    return any(is_test_path(path) for path in tracked)
+
+
 def count_lines(path: Path) -> int | None:
     """Line count of a text file, None for binaries and anything oversized."""
     try:
@@ -193,6 +255,8 @@ def diff_shape(cwd: str) -> dict | None:
             rows.append((path, lines, 0, True))
 
     existing = [r for r in rows if not r[3]]
+    changed_source = [r[0] for r in rows if is_source_path(r[0])]
+    changed_tests = [r[0] for r in rows if is_test_path(r[0])]
     fingerprint = hashlib.sha1(
         "\n".join(f"{p}\t{a}\t{d}" for p, a, d, _ in sorted(rows)).encode()
     ).hexdigest()
@@ -205,10 +269,49 @@ def diff_shape(cwd: str) -> dict | None:
         "existing_deleted": sum(r[2] for r in existing),
         "new_files": len(rows) - len(existing),
         "fingerprint": fingerprint,
+        "root": root,
+        "source_files": len(changed_source),
+        "test_files": len(changed_tests),
     }
 
 
 # ----- assessment ------------------------------------------------------------
+
+
+def last_assistant_text(transcript_path: str | None) -> str | None:
+    """The text of the last assistant message in the session transcript, or None.
+
+    None also covers "no transcript, unreadable, or an unfamiliar format", which is what
+    makes the summary check fail open: a format change here must never block a stop.
+    """
+    if not transcript_path:
+        return None
+    try:
+        with open(transcript_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - MAX_TRANSCRIPT_TAIL_BYTES))
+            raw = fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in reversed(raw.splitlines()):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        content = (entry.get("message") or {}).get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text = "\n".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            if text.strip():
+                return text
+    return None
 
 
 def assess(shape: dict) -> tuple[bool, bool]:
@@ -283,6 +386,20 @@ def run_stop(payload: dict) -> None:
     if can_nudge and large and not state.get("large_nudged"):
         reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
         state["large_nudged"] = True
+    if (
+        can_nudge
+        and not state.get("tests_nudged")
+        and shape["source_files"]
+        and not shape["test_files"]
+        and repo_has_tests(shape["root"])
+    ):
+        reasons.append(TESTS_MESSAGE.format(**shape))
+        state["tests_nudged"] = True
+    if can_nudge and not state.get("summary_nudged") and shape["added"] + shape["deleted"] >= MIN_ADDED:
+        summary_text = last_assistant_text(payload.get("transcript_path"))
+        if summary_text is not None and not DIFF_SHAPE_RE.search(summary_text):
+            reasons.append(SUMMARY_MESSAGE)
+            state["summary_nudged"] = True
 
     state["fingerprint"] = shape["fingerprint"]
     if reasons:

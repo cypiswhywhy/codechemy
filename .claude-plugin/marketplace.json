@@ -1,15 +1,18 @@
 {
   "name": "codechemy",
-  "owner": {"name": "Cyprian Nosek", "url": "https://github.com/cypiswhywhy"},
+  "owner": {
+    "name": "Cyprian Nosek",
+    "url": "https://github.com/cypiswhywhy"
+  },
   "metadata": {
     "description": "Assets for improving Claude Code workflows.",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "plugins": [
     {
       "name": "engineering-practices",
       "source": "./claude-code/plugins/engineering-practices",
-      "description": "Leave the code smaller than you found it, ship small increments, work test-driven: a contract hook, a diff-shape hook and a maintenance-toolbox skill."
+      "description": "Understand before you change, leave the code smaller than you found it, ship small increments, work test-driven, be correct by construction: two hooks that hold every session to the contract, and eight skills for the work around the code."
     }
   ]
 }

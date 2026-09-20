@@ -193,6 +193,90 @@ class HookCase(unittest.TestCase):
         self.assertEqual(out.get("decision"), "block")
         self.assertIn("(1 existing: +50 / -0; 0 new)", out["reason"])
 
+    # ----- the test-touch check -----
+
+    def seed_tests(self) -> None:
+        """A committed test file, so the repository counts as having a harness."""
+        (self.repo / "tests").mkdir(exist_ok=True)
+        (self.repo / "tests" / "test_a.py").write_text("def test_a():\n    assert True\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "tests")
+
+    def test_source_change_without_a_test_change_is_nudged(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))  # balanced, not add-only
+        out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("no test changed with it", out["reason"])
+
+    def test_changing_a_test_too_satisfies_the_check(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        (self.repo / "tests" / "test_a.py").write_text("def test_a():\n    assert 1 == 1\n")
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+
+    def test_repository_without_a_harness_is_not_nudged(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+
+    def test_docs_and_config_only_changes_are_not_nudged(self) -> None:
+        self.seed_tests()
+        (self.repo / "README.md").write_text(lines(60, "prose "))
+        (self.repo / "conf.yaml").write_text(lines(60, "k"))
+        out = self.run_hook("stop")
+        self.assertNotIn("no test changed with it", json.dumps(out))
+
+    def test_the_test_nudge_is_asked_once_per_session(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        self.assertIn("no test changed with it", self.run_hook("stop")["reason"])
+        (self.repo / "a.py").write_text(lines(2) + lines(60, "other"))
+        self.assertNotIn("no test changed with it", json.dumps(self.run_hook("stop")))
+
+    # ----- the summary-shape check -----
+
+    def transcript(self, *texts: str) -> str:
+        path = self.tmp / "transcript.jsonl"
+        path.write_text("".join(
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}) + "\n"
+            for text in texts
+        ))
+        return str(path)
+
+    def test_summary_without_the_diff_shape_is_nudged(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=self.transcript("Done, the parser handles it now."))
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("diff shape", out["reason"])
+
+    def test_summary_with_the_diff_shape_passes(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=self.transcript("Done. +45 / -8 across 1 file."))
+        self.assertNotIn("decision", out)
+
+    def test_a_typographic_minus_still_counts_as_the_diff_shape(self) -> None:
+        # Markdown summaries routinely carry U+2212 or an en dash where the hyphen was typed.
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        for n, dash in enumerate(("\u2212", "\u2013", "\u2014")):
+            with self.subTest(dash=dash):
+                # A fresh session each time: the check fires once per session, which would
+                # otherwise let the second and third dashes pass without being tested.
+                path = self.transcript(f"Done. +597 / {dash}151 across 25 files.")
+                out = self.run_hook("stop", transcript_path=path, session_id=f"dash{n}")
+                self.assertNotIn("decision", out)
+
+    def test_only_the_last_message_counts(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        path = self.transcript("+45 / -8 across 1 file.", "Actually, one more thing.")
+        self.assertEqual(self.run_hook("stop", transcript_path=path).get("decision"), "block")
+
+    def test_an_unreadable_transcript_is_silent(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
+        self.assertNotIn("decision", out)
+
     # ----- session-start -----
 
     def test_session_start_hints_without_toolbox(self) -> None:

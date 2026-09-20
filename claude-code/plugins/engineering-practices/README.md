@@ -10,10 +10,11 @@ in every project**. Three kinds of resource that combine into one behaviour:
 | `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
-five practices, two hooks and one skill, about four problems: agents add lines and rarely
-remove them, and turn a plan into one thousand-line PR - or into six PRs none of which is
-useful on its own; they write a near-copy of a helper
-instead of generalising the one that already exists; they document every line they write; and
+seven practices, two hooks and eight skills, about six problems: agents start writing before
+they have understood what is wanted; they add lines and rarely remove them, and turn a plan
+into one thousand-line PR - or into six PRs none of which is useful on its own; they write a
+near-copy of a helper instead of generalising the one that already exists; they leave errors
+swallowed and input unchecked for the review to find; they document every line they write; and
 they write the code first and the tests, if at all, afterwards.
 
 ## Install
@@ -63,6 +64,12 @@ clone of it gets the plugin with no command at all.
 
 ### Practices (`practices/`)
 
+- **05-understand-first.md**: the most expensive defect is a correct implementation of the
+  wrong thing, and nothing downstream catches it. Restate the request as an outcome, name the
+  invariant, read one existing example of the same kind of thing, name the two or three ways it
+  can fail, ask only where two readings lead to different work - and run
+  [`/frame`](skills/frame/SKILL.md) when the change touches a contract, crosses a module
+  boundary or is hard to undo.
 - **10-leave-it-smaller.md**: every change is also a maintenance pass over the code it
   touches. Tidy as you go, replace don't accumulate, delete don't deprecate, no defensive code
   the task does not need, prove then delete, a scope boundary, and the diff shape in every summary.
@@ -77,14 +84,19 @@ clone of it gets the plugin with no command at all.
   every coherent step, a PR costs a review cycle and is cut only at a real seam; one piece of
   value lands whole at any size; the splits that only look like seams are named so they can be
   refused.
-  The [`/apply-increment`](../../skills/apply-increment/SKILL.md) and
-  [`/apply-all-increments`](../../skills/apply-all-increments/SKILL.md) skills carry this out for
-  an OpenSpec project; they ship outside the plugin because they need the `openspec` CLI.
+  The [`/apply-increment`](skills/apply-increment/SKILL.md) and
+  [`/apply-all-increments`](skills/apply-all-increments/SKILL.md) skills carry this out for an
+  OpenSpec project.
 - **30-test-driven.md**: red-green-refactor whenever a change alters behaviour and the project
   has a test harness. Failing test first and seen failing, smallest code to green, refactor on
   green; bug fixes start with a reproducing test; a red test means root-cause the code, and the test
   changes only once the logic under it is shown correct; not
   applicable to docs, config, one-off scripts and declared spikes, and the summary says so.
+- **35-correct-by-construction.md**: the defects the review loop and the audit find one cycle
+  at a time, written correctly the first time instead. Validate where data crosses into your
+  code and trust it inside; propagate errors with context and never swallow one; name shared
+  state before creating it; make anything reachable twice safe twice; release on the error path;
+  keep untrusted input out of interpreters and credentials out of logs.
 - **40-say-less.md**: comments carry the *why* only; one-line docstrings stating the contract,
   none at all where the name and signature already say it; length only for a reason outside the
   code; no change narration, `TODO`s or commented-out code; match the density of the file.
@@ -106,11 +118,15 @@ untracked files count as new, binaries are ignored) and acts per stop:
 | no repository or no change | silent |
 | the change gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
 | total change ≥ 400 lines | **block once per session** asking which landing points were named up front, and refusing a retroactive slice by file or layer as a split |
+| source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
+| the change is ≥ 40 lines and the last message states no `+N / -M` | **block once per session** asking for the diff shape and the test result the contract requires |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files` |
 
-Bounded by construction: never while the agent is already continuing because of a stop hook,
-never twice for the same diff, at most two blocks per session; after that the smell is still
-shown to you but the agent is not interrupted. `session-start` tells the agent to offer
+The last two read the session transcript for the message the agent is about to hand back; when
+there is no transcript, or its format is not the one expected, the check passes rather than
+blocking. Bounded by construction: never while the agent is already continuing because of a stop
+hook, never twice for the same diff, each check at most once per session, at most two blocks per
+session in all; after that the smell is still shown to you but the agent is not interrupted. `session-start` tells the agent to offer
 `/maintenance-toolbox` once when the repository's `CLAUDE.md` has no `## Maintenance toolbox`.
 
 | Variable | Default | Meaning |
@@ -121,7 +137,26 @@ shown to you but the agent is not interrupted. `session-start` tells the agent t
 | `LEAVE_IT_SMALLER_MAX_NUDGES` | `2` | blocked stops per session |
 | `LEAVE_IT_SMALLER_DISABLE` | unset | `1` silences both events |
 
-### Skill: `/maintenance-toolbox`
+### Skills (`skills/`)
+
+Eight, all installed with the plugin.
+
+| Skill | What it does |
+|---|---|
+| [`/frame`](skills/frame/SKILL.md) | One screen of design brief - problem, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, how we will know - then one decision and straight into the code. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
+| [`/self-review`](skills/self-review/SKILL.md) | The mechanical pass over your own diff before anyone else reads it: symbols that do not exist, anchors that drifted, absolutes with a counterexample, claims the code cannot observe, duplication you just added, error paths, tests asserting a proxy |
+| [`/push`](skills/push/SKILL.md) | Branch to merge-ready PR: self-review, push, PR, then the automated review loop until green - Copilot, or `/code-review` in a fresh-context subagent when Copilot is unavailable |
+| [`/codebase-maintenance`](skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, verified commits, through to a merge-ready PR |
+| [`/maintenance-toolbox`](skills/maintenance-toolbox/SKILL.md) | Records a project's dead-code, unused-dependency, lint and test commands in its CLAUDE.md, so deletions can be proven |
+| [`/claude-customizations`](skills/claude-customizations/SKILL.md) | Read-only audit of every Claude Code customization, CLI and Desktop, against a fresh install |
+| [`/apply-increment`](skills/apply-increment/SKILL.md) | Implements one OpenSpec task group as its own PR, then stops |
+| [`/apply-all-increments`](skills/apply-all-increments/SKILL.md) | Repeats that to main, archiving the change at the end |
+
+`/apply-increment` and `/apply-all-increments` need the `openspec` CLI, and
+`/codebase-maintenance` and `/claude-customizations` need `python3`; a missing command disables
+only the skill that calls it.
+
+### Skill: `/maintenance-toolbox` in detail
 
 Deletion needs global knowledge the agent lacks: which command lists dead code, unused
 dependencies, unused imports, and runs the tests. The skill detects the stack, finds what is
@@ -134,8 +169,7 @@ contract tells the agent to look before deleting. Declining writes
 ## Tests
 
 ```bash
-python3 hooks/test_practices.py
-python3 hooks/test_leave_it_smaller.py
+pytest
 ```
 
 Throwaway git repositories and config dirs; each hook is driven the way Claude Code drives it

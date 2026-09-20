@@ -19,40 +19,24 @@ review as the quality gate: GitHub Copilot where it is available, the local
 
 ## Step 0 — Self-review before the first push
 
-Run this once, before the first push of a branch. Skip it on re-pushes within the
+Run `/self-review` once, before the first push of a branch. Skip it on re-pushes within the
 review loop (Step 7 already re-runs the review).
 
-Every cycle of the loop costs a triage pass, and on the Copilot path 4–6 minutes of
-waiting with it, so a defect the reviewer finds is more expensive than the same defect
-found here. Run the project's tests and whatever its `CLAUDE.md` lists as a
-maintenance toolbox first — a red suite is a review cycle spent on something the
-command already knew. Then the checks below, which are what most often comes back as
-review comments, and each of which is mechanical:
+Every cycle of the loop costs a triage pass, and on the Copilot path 4-6 minutes of waiting
+with it, so a defect the reviewer finds is more expensive than the same defect found here.
+`/self-review` runs the project's gates, then the mechanical checks that most often come back
+as review comments: symbols that do not exist, anchors that have drifted, absolutes with a
+counterexample, claims the code cannot observe, a new rule applied at one site out of several,
+and tests asserting a proxy rather than the behaviour.
 
-1. **Every symbol you named exists.** Grep for each class, method, function, field,
-   flag and file path the diff mentions — in commit messages and prose as much as in
-   code. A name that reads like the right one is the commonest failure: it came from
-   what the thing *ought* to be called, not from the tree.
-2. **Every line number and anchor still resolves.** They drift, and a citation
-   the same change moves is dead on arrival. Prefer the symbol over the line.
-3. **Every absolute has been checked against its counterexample.** For each "only",
-   "never", "always", "every", "cannot" in the diff, find the case that would
-   contradict it. If one exists, name it in the same sentence or delete the absolute.
-4. **No claim asserts something the code cannot observe.** A record written before
-   an operation cannot attest to its outcome; a pre-flight check cannot prove
-   delivery; a count of what was attempted is not a count of what succeeded. State
-   what the code actually knows.
-5. **A new rule applies at every site that asks the same question.** Grep for the
-   old predicate across the tree, not just the call site you were editing.
-6. **Tests assert the behaviour, not a proxy for it.** A key being present is not
-   its value being right; a call being made is not the effect happening.
+Fix what it finds and fold it into the commits you are about to push. Do not open a PR to fix
+your own pre-push findings.
 
-Fix what this finds and fold it into the commits you are about to push. Do not open
-a PR to fix your own pre-push findings.
+If `/self-review` is not available in this session, run its checks inline from the list above.
 
-This step is not a substitute for the review loop and does not shorten the cap — it
-removes the findings that would otherwise consume cycles, so the cycles that do run
-are spent on things you could not have found yourself.
+This step is not a substitute for the review loop and does not shorten the cap - it removes the
+findings that would otherwise consume cycles, so the cycles that do run are spent on things you
+could not have found yourself.
 
 ## Step 1 — Push
 
@@ -147,15 +131,25 @@ Then, once:
    pushed and the PR is unreviewed, which of the three signals above fired, and that
    enabling Copilot code review for the repo or waiting for the quota to reset is
    what restores the primary gate.
-2. **Run it against the PR, posting the findings as inline comments.**
+2. **Run it in a subagent that did not write the change.** Copilot's value is that it
+   reads the diff without the reasoning that produced it; reviewing in the context that
+   just wrote the code loses exactly that, because every questionable decision arrives
+   already justified. A subagent is not an independent model, but it is an independent
+   read: it sees the diff and the repository and none of this session's reasoning.
+
+   Launch one with the Agent tool and give it only the PR number and this instruction:
 
    ```
-   /code-review <pr-number> high --comment
+   Run /code-review <pr-number> high --comment against this repository.
+   You did not write this change. Judge it only on the diff and the code around it.
+   Report the findings you posted.
    ```
 
    Name the level explicitly, or the gate silently inherits whatever level the user
    last typed. Never pass `--fix`: it applies findings without the Step 6 triage, and
-   triage is where a finding gets declined.
+   triage is where a finding gets declined. If subagents are unavailable, run
+   `/code-review <pr-number> high --comment` in this session and say in Step 8 that the
+   review shared the writing context.
 3. **Record that the local reviewer owns the gate for the rest of this run.** Do not
    re-attempt Copilot on later cycles — each attempt spends Step 4's wait to learn
    what you already know.
@@ -243,9 +237,18 @@ non-blocking thread, resolve it, put it in the Step 7 table, and leave the code
 alone. Declining is the default for `pattern` and `style`, and it is cheap: a reply
 and a resolution change no code, so they trigger no re-review.
 
-One exception: in cycle 1 only, fix a `pattern` finding when it sits in code this PR
-added and the fix is local and obvious — a few lines, no new names. From cycle 2 on,
-a `pattern` worth doing is a follow-up issue, not a commit on this PR.
+Two exceptions, both bounded so they cannot cost a cycle each:
+
+- **One `pattern` finding per cycle may be fixed** when it sits in code this PR added and
+  the fix is local — a few lines, no new names, no new file. Take the one with the most
+  behind it, and decline the rest of that class in the same cycle. A blanket decline of
+  every design comment is how a PR converges on "no blocking defects" and stops there,
+  which is a lower bar than the change deserves.
+- **A `pattern` finding that names duplication you introduced is blocking**, because it
+  is the "Reuse before adding" contract arriving late rather than a matter of taste.
+
+From cycle 3 on, neither exception applies: a `pattern` worth doing is a follow-up issue,
+not a commit on this PR.
 
 ### Fix the finding, nothing else
 
@@ -350,9 +353,10 @@ ones to the user with each cycle's table instead of looping.
 When green, tell the user the PR is ready for merge and give them the PR URL.
 NEVER merge the PR yourself — merging is the user's manual step.
 
-Name the reviewer that gated it. If Step 3a ran, say which signal triggered the
-fallback and that the reviewer was the same model that wrote the change rather than an
-independent one — that changes how much the user's own read of the PR has to carry.
+Name the reviewer that gated it. If Step 3a ran, say which signal triggered the fallback,
+and that the reviewer was the same model reading in a fresh context rather than an
+independent one — it did not see this session's reasoning, but it shares its blind spots.
+That changes how much the user's own read of the PR has to carry.
 
 Close with the cycle tables, one after another, and a line totalling what was left
 undone: how many findings were declined and how many deferred to issues. Those are
