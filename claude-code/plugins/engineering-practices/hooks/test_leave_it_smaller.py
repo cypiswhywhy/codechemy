@@ -81,7 +81,7 @@ class HookCase(unittest.TestCase):
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("+50 / -0", first["reason"])
-        self.assertIn("1 existing file(s) grew by +50", first["reason"])
+        self.assertIn("added +50 and removed only -0", first["reason"])
         # Same diff again: already nudged on this exact shape, nothing new to say.
         self.assertEqual(self.run_hook("stop"), {})
         # Still add-only after more edits: second (and last) nudge.
@@ -91,7 +91,7 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(10) + lines(90, "new"))
         third = self.run_hook("stop")
         self.assertNotIn("decision", third)
-        self.assertIn("existing files only grew", third["systemMessage"])
+        self.assertIn("add-only", third["systemMessage"])
 
     def test_stop_hook_active_never_blocks(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
@@ -104,7 +104,7 @@ class HookCase(unittest.TestCase):
         out = self.run_hook("stop")
         self.assertNotIn("decision", out)
         self.assertIn("+45 / -8", out["systemMessage"])
-        self.assertNotIn("only grew", out["systemMessage"])
+        self.assertNotIn("add-only", out["systemMessage"])
 
     def test_small_additions_are_not_growth(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(20, "new"))
@@ -112,22 +112,38 @@ class HookCase(unittest.TestCase):
         self.assertNotIn("decision", out)
         self.assertIn("+20 / -0", out["systemMessage"])
 
-    def test_new_files_count_as_new_not_growth(self) -> None:
+    def test_a_new_file_alone_is_add_only_and_blocks(self) -> None:
         (self.repo / "b.py").write_text(lines(200))  # untracked
         out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("(0 existing: +0 / -0; 1 new)", out["reason"])
+        self.assertIn("already has", out["reason"])
+
+    def test_deletions_elsewhere_excuse_a_new_file(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(100, "grow"))
+        git(self.repo, "commit", "-qam", "grow")
+        (self.repo / "b.py").write_text(lines(200))
+        (self.repo / "a.py").write_text(lines(10))  # -100
+        out = self.run_hook("stop")
         self.assertNotIn("decision", out)
-        self.assertIn("(0 existing: +0 / -0; 1 new)", out["systemMessage"])
+        self.assertNotIn("add-only", out["systemMessage"])
+        self.assertIn("+200 / -100", out["systemMessage"])
 
     def test_large_change_nudges_once(self) -> None:
         (self.repo / "b.py").write_text(lines(500))
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("already 500 lines", first["reason"])
-        self.assertIn("independently shippable", first["reason"])
+        self.assertIn("landing points you named", first["reason"])
+        # Still large, but the seam question is asked only once per session.
         (self.repo / "b.py").write_text(lines(520))
         second = self.run_hook("stop")
-        self.assertNotIn("decision", second)
-        self.assertIn("large change", second["systemMessage"])
+        self.assertNotIn("landing points you named", second["reason"])
+        # Nudge cap reached: the shape is reported, not blocked.
+        (self.repo / "b.py").write_text(lines(540))
+        third = self.run_hook("stop")
+        self.assertNotIn("decision", third)
+        self.assertIn("large change", third["systemMessage"])
 
     def test_feature_branch_is_measured_against_main(self) -> None:
         git(self.repo, "checkout", "-qb", "feature")
@@ -176,6 +192,90 @@ class HookCase(unittest.TestCase):
         out = self.run_hook("stop")
         self.assertEqual(out.get("decision"), "block")
         self.assertIn("(1 existing: +50 / -0; 0 new)", out["reason"])
+
+    # ----- the test-touch check -----
+
+    def seed_tests(self) -> None:
+        """A committed test file, so the repository counts as having a harness."""
+        (self.repo / "tests").mkdir(exist_ok=True)
+        (self.repo / "tests" / "test_a.py").write_text("def test_a():\n    assert True\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "tests")
+
+    def test_source_change_without_a_test_change_is_nudged(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))  # balanced, not add-only
+        out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("no test changed with it", out["reason"])
+
+    def test_changing_a_test_too_satisfies_the_check(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        (self.repo / "tests" / "test_a.py").write_text("def test_a():\n    assert 1 == 1\n")
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+
+    def test_repository_without_a_harness_is_not_nudged(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+
+    def test_docs_and_config_only_changes_are_not_nudged(self) -> None:
+        self.seed_tests()
+        (self.repo / "README.md").write_text(lines(60, "prose "))
+        (self.repo / "conf.yaml").write_text(lines(60, "k"))
+        out = self.run_hook("stop")
+        self.assertNotIn("no test changed with it", json.dumps(out))
+
+    def test_the_test_nudge_is_asked_once_per_session(self) -> None:
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        self.assertIn("no test changed with it", self.run_hook("stop")["reason"])
+        (self.repo / "a.py").write_text(lines(2) + lines(60, "other"))
+        self.assertNotIn("no test changed with it", json.dumps(self.run_hook("stop")))
+
+    # ----- the summary-shape check -----
+
+    def transcript(self, *texts: str) -> str:
+        path = self.tmp / "transcript.jsonl"
+        path.write_text("".join(
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}) + "\n"
+            for text in texts
+        ))
+        return str(path)
+
+    def test_summary_without_the_diff_shape_is_nudged(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=self.transcript("Done, the parser handles it now."))
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("diff shape", out["reason"])
+
+    def test_summary_with_the_diff_shape_passes(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=self.transcript("Done. +45 / -8 across 1 file."))
+        self.assertNotIn("decision", out)
+
+    def test_a_typographic_minus_still_counts_as_the_diff_shape(self) -> None:
+        # Markdown summaries routinely carry U+2212 or an en dash where the hyphen was typed.
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        for n, dash in enumerate(("\u2212", "\u2013", "\u2014")):
+            with self.subTest(dash=dash):
+                # A fresh session each time: the check fires once per session, which would
+                # otherwise let the second and third dashes pass without being tested.
+                path = self.transcript(f"Done. +597 / {dash}151 across 25 files.")
+                out = self.run_hook("stop", transcript_path=path, session_id=f"dash{n}")
+                self.assertNotIn("decision", out)
+
+    def test_only_the_last_message_counts(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        path = self.transcript("+45 / -8 across 1 file.", "Actually, one more thing.")
+        self.assertEqual(self.run_hook("stop", transcript_path=path).get("decision"), "block")
+
+    def test_an_unreadable_transcript_is_silent(self) -> None:
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
+        self.assertNotIn("decision", out)
 
     # ----- session-start -----
 

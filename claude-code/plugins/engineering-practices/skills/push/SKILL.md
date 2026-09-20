@@ -1,6 +1,6 @@
 ---
 name: push
-description: Push the current branch to GitHub, open a PR, run the automated code review loop (address or dismiss every comment, resolve threads, re-push) until the review is green, then hand the PR back to the user for manual merge. GitHub Copilot is the reviewer; when Copilot is unavailable — not enabled for the repo, out of quota, or silent — it falls back to the local /code-review skill. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
+description: Push the current branch to GitHub, open a PR, run the automated code review loop (classify every comment, fix the correctness-class ones, decline the cosmetic ones, resolve threads, re-push) until the review is green, reporting each cycle's findings as a short classified table, then hand the PR back to the user for manual merge. GitHub Copilot is the reviewer; when Copilot is unavailable — not enabled for the repo, out of quota, or silent — it falls back to the local /code-review skill. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
 ---
 
 # Push & automated review loop
@@ -19,38 +19,24 @@ review as the quality gate: GitHub Copilot where it is available, the local
 
 ## Step 0 — Self-review before the first push
 
-Run this once, before the first push of a branch. Skip it on re-pushes within the
+Run `/self-review` once, before the first push of a branch. Skip it on re-pushes within the
 review loop (Step 7 already re-runs the review).
 
-Every cycle of the loop costs a triage pass, and on the Copilot path 4–6 minutes of
-waiting with it, so a defect the reviewer finds is more expensive than the same defect
-found here. These are
-the checks that most often come back as review comments, and each is mechanical:
+Every cycle of the loop costs a triage pass, and on the Copilot path 4-6 minutes of waiting
+with it, so a defect the reviewer finds is more expensive than the same defect found here.
+`/self-review` runs the project's gates, then the mechanical checks that most often come back
+as review comments: symbols that do not exist, anchors that have drifted, absolutes with a
+counterexample, claims the code cannot observe, a new rule applied at one site out of several,
+and tests asserting a proxy rather than the behaviour.
 
-1. **Every symbol you named exists.** Grep for each class, method, function, field,
-   flag and file path the diff mentions — in commit messages and prose as much as in
-   code. A name that reads like the right one is the commonest failure: it came from
-   what the thing *ought* to be called, not from the tree.
-2. **Every line number and anchor still resolves.** They drift, and a citation
-   the same change moves is dead on arrival. Prefer the symbol over the line.
-3. **Every absolute has been checked against its counterexample.** For each "only",
-   "never", "always", "every", "cannot" in the diff, find the case that would
-   contradict it. If one exists, name it in the same sentence or delete the absolute.
-4. **No claim asserts something the code cannot observe.** A record written before
-   an operation cannot attest to its outcome; a pre-flight check cannot prove
-   delivery; a count of what was attempted is not a count of what succeeded. State
-   what the code actually knows.
-5. **A new rule applies at every site that asks the same question.** Grep for the
-   old predicate across the tree, not just the call site you were editing.
-6. **Tests assert the behaviour, not a proxy for it.** A key being present is not
-   its value being right; a call being made is not the effect happening.
+Fix what it finds and fold it into the commits you are about to push. Do not open a PR to fix
+your own pre-push findings.
 
-Fix what this finds and fold it into the commits you are about to push. Do not open
-a PR to fix your own pre-push findings.
+If `/self-review` is not available in this session, run its checks inline from the list above.
 
-This step is not a substitute for the review loop and does not shorten the cap — it
-removes the findings that would otherwise consume cycles, so the cycles that do run
-are spent on things you could not have found yourself.
+This step is not a substitute for the review loop and does not shorten the cap - it removes the
+findings that would otherwise consume cycles, so the cycles that do run are spent on things you
+could not have found yourself.
 
 ## Step 1 — Push
 
@@ -145,15 +131,25 @@ Then, once:
    pushed and the PR is unreviewed, which of the three signals above fired, and that
    enabling Copilot code review for the repo or waiting for the quota to reset is
    what restores the primary gate.
-2. **Run it against the PR, posting the findings as inline comments.**
+2. **Run it in a subagent that did not write the change.** Copilot's value is that it
+   reads the diff without the reasoning that produced it; reviewing in the context that
+   just wrote the code loses exactly that, because every questionable decision arrives
+   already justified. A subagent is not an independent model, but it is an independent
+   read: it sees the diff and the repository and none of this session's reasoning.
+
+   Launch one with the Agent tool and give it only the PR number and this instruction:
 
    ```
-   /code-review <pr-number> high --comment
+   Run /code-review <pr-number> high --comment against this repository.
+   You did not write this change. Judge it only on the diff and the code around it.
+   Report the findings you posted.
    ```
 
    Name the level explicitly, or the gate silently inherits whatever level the user
    last typed. Never pass `--fix`: it applies findings without the Step 6 triage, and
-   triage is where a finding gets declined.
+   triage is where a finding gets declined. If subagents are unavailable, run
+   `/code-review <pr-number> high --comment` in this session and say in Step 8 that the
+   review shared the writing context.
 3. **Record that the local reviewer owns the gate for the rest of this run.** Do not
    re-attempt Copilot on later cycles — each attempt spends Step 4's wait to learn
    what you already know.
@@ -216,50 +212,83 @@ the Step 3a path the author is the user's own account, which their own comments 
 too — so match the comments the review posted in this run, which you have just seen,
 and leave the user's own threads alone.
 
-## Step 6 — Triage every unresolved thread
+## Step 6 — Classify every finding, then triage by class
 
-For EACH thread, read the comment in the context of the actual code and decide:
+Convergence is the whole problem in this loop. Every fix you push is new code the
+next review reads for the first time, so a cycle that changes a lot of code buys
+itself another cycle. Two rules keep it finite: only some classes of finding are
+worth a code change at all, and the change is the smallest one that removes the
+defect.
 
-- **Address it** when the comment identifies a real bug, a correctness/security
-  issue, or a clearly better approach that fits the codebase. Make the fix.
-- **Decline it** when it is a false positive, out of scope for this PR, contradicts
-  project conventions, or is stylistic churn. Do NOT change code just to appease
-  the reviewer.
+**Classify first.** One label per thread, before deciding anything:
 
-A comment being *correct* is not sufficient reason to act on it. The question is
-whether it changes behaviour, an interface, or a decision someone will act on.
-Tightening prose in a document the next change supersedes is churn even when the
-tightening is accurate, and it grows the diff the reviewer then re-reads. If you
-find yourself accepting nearly every comment across several cycles, you have stopped
-triaging — a healthy loop declines some.
+| Type | What it covers | Blocking? |
+|---|---|---|
+| `bug` | wrong behaviour: crash, wrong result, bad edge case, race, leak | yes |
+| `security` | injection, exposed secret, missing validation or authorization | yes |
+| `false claim` | prose, docs or a commit message asserting something the tree does not support — a symbol or path that does not exist, a guarantee the code cannot make | yes |
+| `test gap` | behaviour this PR changed with nothing asserting it | yes |
+| `pattern` | it works, but the shape is not the best one: duplication, wrong abstraction, dead code, needless cost | no |
+| `style` | naming, formatting, wording, comment phrasing, ordering | no |
+| `false positive` | the comment is wrong about the code | no |
 
-### Generalize before you fix
+**Blocking findings get fixed this cycle; non-blocking ones do not.** Reply to a
+non-blocking thread, resolve it, put it in the Step 7 table, and leave the code
+alone. Declining is the default for `pattern` and `style`, and it is cheap: a reply
+and a resolution change no code, so they trigger no re-review.
 
-A review comment points at one site. Before fixing that site, decide whether it is an
-*instance of a class* — and if it is, fix the whole class in one commit:
+Two exceptions, both bounded so they cannot cost a cycle each:
+
+- **One `pattern` finding per cycle may be fixed** when it sits in code this PR added and
+  the fix is local — a few lines, no new names, no new file. Take the one with the most
+  behind it, and decline the rest of that class in the same cycle. A blanket decline of
+  every design comment is how a PR converges on "no blocking defects" and stops there,
+  which is a lower bar than the change deserves.
+- **A `pattern` finding that names duplication you introduced is blocking**, because it
+  is the "Reuse before adding" contract arriving late rather than a matter of taste.
+
+From cycle 3 on, neither exception applies: a `pattern` worth doing is a follow-up issue,
+not a commit on this PR.
+
+### Fix the finding, nothing else
+
+- Take the smallest edit that removes the defect. No drive-by renaming, rewording,
+  reformatting or tidying near the site: that is how a one-line fix becomes three
+  findings next cycle. The leave-it-smaller pass belongs to the commits you wrote
+  before the first push, not to a review fix.
+- Prefer the edit that introduces no new name, file or abstraction.
+- Before pushing, read your own fix diff (`git diff HEAD~`) against the Step 0
+  checklist. Anything a later cycle raises against a fix commit is a cycle you
+  paid for yourself.
+
+### Generalize before you fix — blocking classes only
+
+A blocking finding points at one site, and the same defect is usually in the change
+more than once. Fixed one site per cycle it costs a full cycle per site; swept, it
+costs one. A duplicated claim — the same assertion restated in several files, which
+planning and spec formats invite — cannot be fixed at one site by construction.
 
 1. Name the class in one sentence ("a record described as proving an outcome it was
    written before", "a symbol cited from inference rather than grep").
-2. Grep the whole change for it. Derive the pattern from the class, not from the
-   comment's wording: the same defect is usually phrased differently elsewhere, so a
-   pattern copied from the quoted line will miss its siblings. Widen the pattern until
-   it over-matches, then read the hits.
+2. Grep *this change* for it (`git diff <default-branch>...HEAD`). Derive the pattern
+   from the class, not from the comment's wording: the same defect is usually phrased
+   differently elsewhere. Widen the pattern until it over-matches, then read the hits.
 3. Fix every hit in one commit, and say in the reply how many sites there were.
 4. Re-run the grep and confirm it comes back empty before pushing.
 
-This matters more than it sounds. A class fixed one site per cycle costs one full
-cycle per site; the same class swept costs one. A duplicated claim — the same
-assertion restated in several files, which planning and spec formats invite —
-cannot be fixed at one site by construction, because the reviewer will find the next
-copy on the next pass.
+Never sweep a `pattern` or `style` class — a cosmetic class swept across the change
+is the largest single source of next-cycle findings. And if the previous cycle
+produced a `↺` row (Step 7), skip the sweep this cycle and take the literal fix.
 
 If the class has recurred before, it is already named in
 `.claude/code-review-lessons.md` (Step 10) — read the relevant section before
 sweeping, since a past occurrence usually names the grep that finds it.
 
-Whatever the decision, **reply in the thread** explaining it — one or two sentences
-("Fixed in <short-sha>." / "Not addressing: <reason>."). Reply via REST using the
-first comment's `databaseId`:
+### Reply and resolve
+
+Whatever the decision, **reply in the thread** — one or two sentences ("Fixed in
+<short-sha>." / "Not addressing: <reason>."). Reply via REST using the first
+comment's `databaseId`:
 
 ```bash
 gh api --method POST repos/{owner}/{repo}/pulls/{num}/comments/{databaseId}/replies \
@@ -275,32 +304,64 @@ mutation($id:ID!) {
 }' -f id=<thread-id>
 ```
 
-## Step 7 — Commit fixes and repeat
+## Step 7 — Report the cycle, commit, repeat
 
-If Step 6 produced any code changes:
+**Every cycle ends with a table**, printed for the user before you push anything.
+One row per thread this cycle raised:
 
-1. Commit them with a descriptive message (e.g. `address code review: <summary>`),
-   ending with `Co-Authored-By: Claude <noreply@anthropic.com>`.
-2. Push.
-3. Go back to Step 3 (if the ruleset has "Review new pushes" enabled the re-review
-   starts automatically; otherwise re-request it) and repeat the cycle. On the Step 3a
-   path, re-run `/code-review` against the PR instead: there is nothing to request and
-   nothing to wait for.
+| # | Finding | Type | Where | Action |
+|---|---|---|---|---|
+| 1 | Writes the manifest even on a dry run | bug | `Makefile:61` | fixed |
+| 2 | ↺ Reply count off by one after the retry fix | bug | `push.py:88` | fixed |
+| 3 | Same URL built in two places | pattern | `push.py:20` | declined — churn |
+| 4 | Says the hook runs on commit; it runs on push | false claim | `README.md:12` | fixed |
 
-**Green condition:** the latest review from whichever reviewer ran covers the current
-head commit, produced no new comments, AND there are no unresolved review threads.
+Rules for the table:
 
-**Safety cap:** run at most 8 review cycles. If it is still not green after 8,
-stop and summarize the remaining open points for the user instead of looping.
+- **Finding** is your own restatement in plain words, ten words or fewer, not the
+  reviewer's wording. Someone who has not read the PR should understand it.
+- **Type** is the Step 6 label, verbatim.
+- **Where** is `file:line`, or the file and the symbol.
+- **Action** is `fixed`, `declined — <two or three words>`, or `deferred — #<issue>`.
+- Prefix the number with `↺` when the finding is in code an earlier cycle of this
+  run introduced. Those rows are the loop paying for itself: two in one cycle means
+  your fixes are too big, so drop the sweep and take literal fixes from there on.
+
+Close the table with one line: `N findings — a fixed, b declined. Blocking left: c.`
+
+Then:
+
+1. If the cycle produced **no code changes**, the loop is over — go to Step 8.
+   Replies and resolutions trigger no re-review, so there is nothing to wait for.
+2. Otherwise commit the fixes as one commit (`address code review: <summary>`),
+   ending with `Co-Authored-By: Claude <noreply@anthropic.com>`, push, and go back
+   to Step 3. On the Step 3a path, re-run `/code-review` against the PR instead:
+   there is nothing to request and nothing to wait for.
+
+**Green condition:** the latest review covers the current head commit, raised no
+*blocking* findings, and no thread is left unresolved. New `pattern` and `style`
+comments on a later cycle do not reopen the loop — they get a reply, a resolution
+and a row in the table.
+
+**Safety cap: 3 cycles.** A cycle costs a triage pass and, on the Copilot path, 4–6
+minutes of waiting; by the fourth the reviewer is mostly reviewing the fixes rather
+than the change. If blocking findings remain after 3 cycles, stop, and hand the open
+ones to the user with each cycle's table instead of looping.
 
 ## Step 8 — Hand off
 
 When green, tell the user the PR is ready for merge and give them the PR URL.
 NEVER merge the PR yourself — merging is the user's manual step.
 
-Name the reviewer that gated it. If Step 3a ran, say which signal triggered the
-fallback and that the reviewer was the same model that wrote the change rather than an
-independent one — that changes how much the user's own read of the PR has to carry.
+Name the reviewer that gated it. If Step 3a ran, say which signal triggered the fallback,
+and that the reviewer was the same model reading in a fresh context rather than an
+independent one — it did not see this session's reasoning, but it shares its blind spots.
+That changes how much the user's own read of the PR has to carry.
+
+Close with the cycle tables, one after another, and a line totalling what was left
+undone: how many findings were declined and how many deferred to issues. Those are
+the calls the user is entitled to overrule before merging, and the table is the only
+place they appear.
 
 ## Step 9 — Propose review-methodology improvements (optional, non-blocking)
 
@@ -405,8 +466,8 @@ Commit the ledger entry as the final commit on this PR (`record code review
 lesson: <class>`). It is additive data rather than a behaviour change, so it does
 not warrant a PR of its own — the separate-PR rule below applies to rule changes.
 If the repo's ruleset has "Review new pushes" enabled, this commit may trigger one
-more Copilot review; that cycle does not count against the Step 7 cap and needs no
-action unless it raises comments on actual code.
+more Copilot review. Do not wait for it: the loop closed at Step 8, and a review of a
+ledger entry has nothing to say about the change.
 
 **Once a class has three occurrences from independent PRs**, propose a preventive
 rule. Where it goes depends on how far the lesson reaches:

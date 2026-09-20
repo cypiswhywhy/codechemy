@@ -5,11 +5,12 @@
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
 Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and, when existing files only grew or the change is already large,
-blocks the stop with a request for a tidy pass or a split. The nudge is bounded: never while
-the agent is already continuing because of a stop hook, never for a diff it has already
-nudged on, and at most LEAVE_IT_SMALLER_MAX_NUDGES times per session. Otherwise the shape is
-shown to the user as a one-line system message.
+plus the working tree) and blocks the stop when it fails one of four checks - the change only
+added lines, it is already large, it edits source without touching a test in a repository that
+has tests, or the summary does not state the diff shape. The nudge is bounded: never while the
+agent is already continuing because of a stop hook, never for a diff it has already nudged on,
+each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in
+all. Otherwise the shape is shown to the user as a one-line system message.
 
 SessionStart: points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
 `## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
@@ -22,10 +23,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def _env_number(name: str, default: float) -> float:
@@ -35,8 +37,8 @@ def _env_number(name: str, default: float) -> float:
         return default
 
 
-# Existing files that gained at least MIN_ADDED lines while losing fewer than
-# MAX_RATIO of that count read as "add-only growth".
+# A change that gained at least MIN_ADDED lines while losing fewer than MAX_RATIO of
+# that count reads as "add-only", whether the lines landed in existing files or new ones.
 MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
 MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
 # Total changed lines from which to look for a separately shippable increment.
@@ -56,20 +58,59 @@ DEFAULT_BRANCH_CANDIDATES = ("origin/HEAD", "origin/main", "origin/master", "mai
 MAX_UNTRACKED_FILES = 200
 MAX_TEXT_BYTES = 1_000_000
 
-GROWTH_MESSAGE = (
-    "{existing_files} existing file(s) grew by +{existing_added} with only "
-    "-{existing_deleted} removed. Before you finish, make one tidy pass over the code you "
-    "touched (see the 'Leave the code smaller than you found it' practice): delete "
-    "the path this change superseded, dead code, unused imports and parameters, duplicated "
-    "helpers, and defensive code the task did not need. Prove each removal first (the "
-    "project's Maintenance toolbox, then a caller grep). If nothing can go, say so explicitly "
-    "in your summary, with the diff shape."
+# Directories and filename shapes that mean "this file is a test", across the common
+# conventions. Used both to spot a repository that has a harness at all and to tell a
+# behaviour change from the test that should have come with it.
+TEST_DIR_NAMES = {"test", "tests", "spec", "specs", "__tests__", "testdata"}
+TEST_NAME_PREFIXES = ("test_", "spec_")
+TEST_STEM_SUFFIXES = ("_test", "_spec", ".test", ".spec", "Test", "Tests", "Spec", "Specs")
+# Extensions that hold no behaviour, so a change confined to them needs no test.
+NON_SOURCE_SUFFIXES = {
+    "", ".md", ".markdown", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini",
+    ".cfg", ".conf", ".lock", ".csv", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico",
+    ".gitignore", ".editorconfig", ".env",
+}
+# `+45 / -8`, `+45/-8`, `+1,024 / -20`: the diff shape every summary has to end with.
+# The minus accepts the typographic dashes a Markdown summary is routinely written with,
+# or the check rejects summaries that do state the shape.
+DIFF_SHAPE_RE = re.compile(r"\+\s?[\d,]+\s*/\s*[-\u2010-\u2015\u2212]\s?[\d,]+")
+# A transcript grows for the whole session; only its tail can hold the last message.
+MAX_TRANSCRIPT_TAIL_BYTES = 256_000
+
+ADD_ONLY_MESSAGE = (
+    "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
+    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
+    "and answer these three, in your summary:\n"
+    "1. Does any of it duplicate something the repository already has? Grep for the concept "
+    "rather than the name; where a second caller now needs what a first one had, generalise "
+    "the existing code and use it in both ('Reuse before adding').\n"
+    "2. Did a new path supersede an old one that is still in the tree? Delete the old one.\n"
+    "3. Is there dead code, an unused import or parameter, defensive code the task did not "
+    "need, or a comment or docstring that only restates the code, in what you touched?\n"
+    "Prove each removal first (the project's Maintenance toolbox, then a caller grep). If "
+    "nothing can go, say which of the three you checked, with the diff shape."
 )
 LARGE_MESSAGE = (
-    "This change is already {total} lines. Check whether it holds more than one independently "
-    "shippable piece of value: if it does, land the complete one as its own commit (or PR) "
-    "before adding more, and say how the rest is split. If it is one piece of value, keep it "
-    "whole - size alone is not a reason to split it - and say so in your summary."
+    "This change is already {total} lines. Say in your summary which landing points you named "
+    "before you started, and put each through the test: merged on its own and stopped there, is "
+    "anyone better off, with main still green? One piece of value lands whole - size alone is "
+    "not a reason to split it, and slicing a finished diff by file or by layer is not a split. "
+    "If a complete, separately useful piece really is in here, land it as its own commit or PR "
+    "first and say how the rest follows. If you named no seams up front, say so, and name them "
+    "now for the work that is left."
+)
+TESTS_MESSAGE = (
+    "This change edits {source_files} source file(s) and no test changed with it, in a "
+    "repository that has a test suite. Before you finish: name the behaviour this changed and "
+    "the test that now covers it. If you wrote the code first, add the test now, and check it "
+    "fails against the old behaviour before you keep it - a test that cannot fail asserts "
+    "nothing. If the change really alters no behaviour (a rename, an extraction, config, "
+    "docs), say which in your summary, with the test command you ran and its result."
+)
+SUMMARY_MESSAGE = (
+    "Your summary does not state the diff shape. End it with `+N / -M` and the files touched, "
+    "together with the tests you ran and their result. Zero removals in a change to existing "
+    "code is a smell - say why when that is the case."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
@@ -144,6 +185,34 @@ def rename_target(numstat_path: str) -> str:
     return numstat_path.split(" => ", 1)[1]
 
 
+def is_test_path(path: str) -> bool:
+    """Whether a repository-relative path is a test, across the common conventions."""
+    parts = PurePosixPath(path).parts
+    if any(part in TEST_DIR_NAMES for part in parts[:-1]):
+        return True
+    name = PurePosixPath(path).name
+    stem = name[: name.rindex(".")] if "." in name[1:] else name
+    return name.startswith(TEST_NAME_PREFIXES) or stem.endswith(TEST_STEM_SUFFIXES)
+
+
+def is_source_path(path: str) -> bool:
+    """Whether a change to this path can alter behaviour, so a test should move with it."""
+    if is_test_path(path):
+        return False
+    name = PurePosixPath(path).name
+    suffix = name[name.rindex(".") :] if "." in name[1:] else ""
+    return suffix not in NON_SOURCE_SUFFIXES
+
+
+def repo_has_tests(root: str) -> bool:
+    """Whether the repository has a test harness at all; without one there is nothing to ask for."""
+    try:
+        tracked = git(root, "ls-files").splitlines()
+    except (GitError, OSError):
+        return False
+    return any(is_test_path(path) for path in tracked)
+
+
 def count_lines(path: Path) -> int | None:
     """Line count of a text file, None for binaries and anything oversized."""
     try:
@@ -186,6 +255,8 @@ def diff_shape(cwd: str) -> dict | None:
             rows.append((path, lines, 0, True))
 
     existing = [r for r in rows if not r[3]]
+    changed_source = [r[0] for r in rows if is_source_path(r[0])]
+    changed_tests = [r[0] for r in rows if is_test_path(r[0])]
     fingerprint = hashlib.sha1(
         "\n".join(f"{p}\t{a}\t{d}" for p, a, d, _ in sorted(rows)).encode()
     ).hexdigest()
@@ -198,21 +269,58 @@ def diff_shape(cwd: str) -> dict | None:
         "existing_deleted": sum(r[2] for r in existing),
         "new_files": len(rows) - len(existing),
         "fingerprint": fingerprint,
+        "root": root,
+        "source_files": len(changed_source),
+        "test_files": len(changed_tests),
     }
 
 
 # ----- assessment ------------------------------------------------------------
 
 
+def last_assistant_text(transcript_path: str | None) -> str | None:
+    """The text of the last assistant message in the session transcript, or None.
+
+    None also covers "no transcript, unreadable, or an unfamiliar format", which is what
+    makes the summary check fail open: a format change here must never block a stop.
+    """
+    if not transcript_path:
+        return None
+    try:
+        with open(transcript_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - MAX_TRANSCRIPT_TAIL_BYTES))
+            raw = fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in reversed(raw.splitlines()):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        content = (entry.get("message") or {}).get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text = "\n".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            if text.strip():
+                return text
+    return None
+
+
 def assess(shape: dict) -> tuple[bool, bool]:
-    """(add-only growth of existing files, change already large)."""
-    growth = (
-        shape["existing_files"] > 0
-        and shape["existing_added"] >= MIN_ADDED
-        and shape["existing_deleted"] < MAX_RATIO * shape["existing_added"]
+    """(the change only added, the change is already large)."""
+    add_only = (
+        shape["added"] >= MIN_ADDED and shape["deleted"] < MAX_RATIO * shape["added"]
     )
     large = shape["added"] + shape["deleted"] >= LARGE
-    return growth, large
+    return add_only, large
 
 
 def summary_line(shape: dict) -> str:
@@ -264,7 +372,7 @@ def run_stop(payload: dict) -> None:
     session_id = str(payload.get("session_id") or "unknown")
     state = load_state(session_id)
     changed = state.get("fingerprint") != shape["fingerprint"]
-    growth, large = assess(shape)
+    add_only, large = assess(shape)
     summary = summary_line(shape)
 
     can_nudge = (
@@ -273,11 +381,25 @@ def run_stop(payload: dict) -> None:
         and state.get("nudges", 0) < MAX_NUDGES
     )
     reasons = []
-    if can_nudge and growth:
-        reasons.append(GROWTH_MESSAGE.format(**shape))
+    if can_nudge and add_only:
+        reasons.append(ADD_ONLY_MESSAGE.format(**shape))
     if can_nudge and large and not state.get("large_nudged"):
         reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
         state["large_nudged"] = True
+    if (
+        can_nudge
+        and not state.get("tests_nudged")
+        and shape["source_files"]
+        and not shape["test_files"]
+        and repo_has_tests(shape["root"])
+    ):
+        reasons.append(TESTS_MESSAGE.format(**shape))
+        state["tests_nudged"] = True
+    if can_nudge and not state.get("summary_nudged") and shape["added"] + shape["deleted"] >= MIN_ADDED:
+        summary_text = last_assistant_text(payload.get("transcript_path"))
+        if summary_text is not None and not DIFF_SHAPE_RE.search(summary_text):
+            reasons.append(SUMMARY_MESSAGE)
+            state["summary_nudged"] = True
 
     state["fingerprint"] = shape["fingerprint"]
     if reasons:
@@ -287,7 +409,7 @@ def run_stop(payload: dict) -> None:
         return
     save_state(session_id, state)
     if changed:
-        flags = [f for f, on in (("existing files only grew", growth), ("large change", large)) if on]
+        flags = [f for f, on in (("add-only", add_only), ("large change", large)) if on]
         emit({"systemMessage": summary + (f" - {', '.join(flags)}" if flags else "")})
 
 
