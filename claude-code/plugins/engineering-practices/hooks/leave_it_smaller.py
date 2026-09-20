@@ -5,8 +5,8 @@
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
 Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and, when existing files only grew or the change is already large,
-blocks the stop with a request for a tidy pass or a split. The nudge is bounded: never while
+plus the working tree) and, when the change only added lines or is already large, blocks the
+stop with a request for a reuse-and-tidy pass or a split. The nudge is bounded: never while
 the agent is already continuing because of a stop hook, never for a diff it has already
 nudged on, and at most LEAVE_IT_SMALLER_MAX_NUDGES times per session. Otherwise the shape is
 shown to the user as a one-line system message.
@@ -35,8 +35,8 @@ def _env_number(name: str, default: float) -> float:
         return default
 
 
-# Existing files that gained at least MIN_ADDED lines while losing fewer than
-# MAX_RATIO of that count read as "add-only growth".
+# A change that gained at least MIN_ADDED lines while losing fewer than MAX_RATIO of
+# that count reads as "add-only", whether the lines landed in existing files or new ones.
 MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
 MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
 # Total changed lines from which to look for a separately shippable increment.
@@ -56,14 +56,18 @@ DEFAULT_BRANCH_CANDIDATES = ("origin/HEAD", "origin/main", "origin/master", "mai
 MAX_UNTRACKED_FILES = 200
 MAX_TEXT_BYTES = 1_000_000
 
-GROWTH_MESSAGE = (
-    "{existing_files} existing file(s) grew by +{existing_added} with only "
-    "-{existing_deleted} removed. Before you finish, make one tidy pass over the code you "
-    "touched (see the 'Leave the code smaller than you found it' practice): delete "
-    "the path this change superseded, dead code, unused imports and parameters, duplicated "
-    "helpers, and defensive code the task did not need. Prove each removal first (the "
-    "project's Maintenance toolbox, then a caller grep). If nothing can go, say so explicitly "
-    "in your summary, with the diff shape."
+ADD_ONLY_MESSAGE = (
+    "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
+    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
+    "and answer these three, in your summary:\n"
+    "1. Does any of it duplicate something the repository already has? Grep for the concept "
+    "rather than the name; where a second caller now needs what a first one had, generalise "
+    "the existing code and use it in both ('Reuse before adding').\n"
+    "2. Did a new path supersede an old one that is still in the tree? Delete the old one.\n"
+    "3. Is there dead code, an unused import or parameter, defensive code the task did not "
+    "need, or a comment or docstring that only restates the code, in what you touched?\n"
+    "Prove each removal first (the project's Maintenance toolbox, then a caller grep). If "
+    "nothing can go, say which of the three you checked, with the diff shape."
 )
 LARGE_MESSAGE = (
     "This change is already {total} lines. Check whether it holds more than one independently "
@@ -205,14 +209,12 @@ def diff_shape(cwd: str) -> dict | None:
 
 
 def assess(shape: dict) -> tuple[bool, bool]:
-    """(add-only growth of existing files, change already large)."""
-    growth = (
-        shape["existing_files"] > 0
-        and shape["existing_added"] >= MIN_ADDED
-        and shape["existing_deleted"] < MAX_RATIO * shape["existing_added"]
+    """(the change only added, the change is already large)."""
+    add_only = (
+        shape["added"] >= MIN_ADDED and shape["deleted"] < MAX_RATIO * shape["added"]
     )
     large = shape["added"] + shape["deleted"] >= LARGE
-    return growth, large
+    return add_only, large
 
 
 def summary_line(shape: dict) -> str:
@@ -264,7 +266,7 @@ def run_stop(payload: dict) -> None:
     session_id = str(payload.get("session_id") or "unknown")
     state = load_state(session_id)
     changed = state.get("fingerprint") != shape["fingerprint"]
-    growth, large = assess(shape)
+    add_only, large = assess(shape)
     summary = summary_line(shape)
 
     can_nudge = (
@@ -273,8 +275,8 @@ def run_stop(payload: dict) -> None:
         and state.get("nudges", 0) < MAX_NUDGES
     )
     reasons = []
-    if can_nudge and growth:
-        reasons.append(GROWTH_MESSAGE.format(**shape))
+    if can_nudge and add_only:
+        reasons.append(ADD_ONLY_MESSAGE.format(**shape))
     if can_nudge and large and not state.get("large_nudged"):
         reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
         state["large_nudged"] = True
@@ -287,7 +289,7 @@ def run_stop(payload: dict) -> None:
         return
     save_state(session_id, state)
     if changed:
-        flags = [f for f, on in (("existing files only grew", growth), ("large change", large)) if on]
+        flags = [f for f, on in (("add-only", add_only), ("large change", large)) if on]
         emit({"systemMessage": summary + (f" - {', '.join(flags)}" if flags else "")})
 
 

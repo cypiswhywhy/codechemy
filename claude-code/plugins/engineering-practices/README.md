@@ -10,9 +10,10 @@ in every project**. Three kinds of resource that combine into one behaviour:
 | `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
-three practices, two hooks and one skill, about two problems: agents add lines and rarely
-remove them, and turn a plan into one thousand-line PR; and they write the code first and the
-tests, if at all, afterwards.
+five practices, two hooks and one skill, about four problems: agents add lines and rarely
+remove them, and turn a plan into one thousand-line PR; they write a near-copy of a helper
+instead of generalising the one that already exists; they document every line they write; and
+they write the code first and the tests, if at all, afterwards.
 
 ## Install
 
@@ -64,6 +65,11 @@ clone of it gets the plugin with no command at all.
 - **10-leave-it-smaller.md**: every change is also a maintenance pass over the code it
   touches. Tidy as you go, replace don't accumulate, delete don't deprecate, no defensive code
   the task does not need, prove then delete, a scope boundary, and the diff shape in every summary.
+- **15-reuse-before-adding.md**: grep for the concept before writing a helper; the second call
+  site is the threshold for extracting, not the third; generalise the existing code and put it
+  where both callers already see it (base class, shared module, free function) rather than
+  copying it; the extraction lands as its own `refactor:` commit, and is in scope even when it
+  edits a file the task did not name.
 - **20-small-increments.md**: refactor first, then feature, then follow-ups; cleanup in its own
   commits; each landing point is one independently shippable piece of value, whatever its size;
   one task group per PR.
@@ -75,6 +81,9 @@ clone of it gets the plugin with no command at all.
   green; bug fixes start with a reproducing test; a red test means root-cause the code, and the test
   changes only once the logic under it is shown correct; not
   applicable to docs, config, one-off scripts and declared spikes, and the summary says so.
+- **40-say-less.md**: comments carry the *why* only; one-line docstrings stating the contract,
+  none at all where the name and signature already say it; length only for a reason outside the
+  code; no change narration, `TODO`s or commented-out code; match the density of the file.
 
 ### Hook: `practices` (`hooks/practices.py`)
 
@@ -91,7 +100,7 @@ untracked files count as new, binaries are ignored) and acts per stop:
 | Condition (defaults) | Action |
 |---|---|
 | no repository or no change | silent |
-| existing files gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and a tidy-pass request |
+| the change gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
 | total change ≥ 400 lines | **block once per session** asking whether a complete, separately shippable increment is in there |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files` |
 
@@ -102,8 +111,8 @@ shown to you but the agent is not interrupted. `session-start` tells the agent t
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LEAVE_IT_SMALLER_MIN_ADDED` | `40` | added lines in existing files before "growth" can trigger |
-| `LEAVE_IT_SMALLER_MAX_RATIO` | `0.10` | deletions/additions below which growth is "add-only" |
+| `LEAVE_IT_SMALLER_MIN_ADDED` | `40` | added lines before "add-only" can trigger |
+| `LEAVE_IT_SMALLER_MAX_RATIO` | `0.10` | deletions/additions below which the change reads as "add-only" |
 | `LEAVE_IT_SMALLER_LARGE` | `400` | total changed lines from which to look for a shippable increment |
 | `LEAVE_IT_SMALLER_MAX_NUDGES` | `2` | blocked stops per session |
 | `LEAVE_IT_SMALLER_DISABLE` | unset | `1` silences both events |
@@ -151,7 +160,8 @@ Throwaway git repositories and config dirs; each hook is driven the way Claude C
 - **Why the hook blocks instead of only reporting.** A `systemMessage` is seen by the user; a
   `decision: block` with a `reason` is seen by the agent and acted on before it hands back.
 - **Why it is bounded.** An unbounded nudge becomes noise the agent learns to justify away.
-- **Why thresholds.** Zero removals in a 15-line addition is normal; in a 200-line change to
-  existing files it is the smell this exists to catch. Defaults are conservative and env-tunable.
+- **Why thresholds, and why new files count.** Zero removals in a 15-line addition is normal;
+  in a 200-line change it is the smell this exists to catch - and a new module is exactly where
+  a duplicated helper or a superseded path hides, so it is measured like any other file. Defaults are conservative and env-tunable.
 - **Stdlib only.** `leave_it_smaller.py` exits 0 on any error and logs under
   `~/.claude/leave-it-smaller/hook.log`, so a stop is never blocked by a bug in it.

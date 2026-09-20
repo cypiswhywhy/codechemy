@@ -81,7 +81,7 @@ class HookCase(unittest.TestCase):
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("+50 / -0", first["reason"])
-        self.assertIn("1 existing file(s) grew by +50", first["reason"])
+        self.assertIn("added +50 and removed only -0", first["reason"])
         # Same diff again: already nudged on this exact shape, nothing new to say.
         self.assertEqual(self.run_hook("stop"), {})
         # Still add-only after more edits: second (and last) nudge.
@@ -91,7 +91,7 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(10) + lines(90, "new"))
         third = self.run_hook("stop")
         self.assertNotIn("decision", third)
-        self.assertIn("existing files only grew", third["systemMessage"])
+        self.assertIn("add-only", third["systemMessage"])
 
     def test_stop_hook_active_never_blocks(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
@@ -104,7 +104,7 @@ class HookCase(unittest.TestCase):
         out = self.run_hook("stop")
         self.assertNotIn("decision", out)
         self.assertIn("+45 / -8", out["systemMessage"])
-        self.assertNotIn("only grew", out["systemMessage"])
+        self.assertNotIn("add-only", out["systemMessage"])
 
     def test_small_additions_are_not_growth(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(20, "new"))
@@ -112,11 +112,22 @@ class HookCase(unittest.TestCase):
         self.assertNotIn("decision", out)
         self.assertIn("+20 / -0", out["systemMessage"])
 
-    def test_new_files_count_as_new_not_growth(self) -> None:
+    def test_a_new_file_alone_is_add_only_and_blocks(self) -> None:
         (self.repo / "b.py").write_text(lines(200))  # untracked
         out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("(0 existing: +0 / -0; 1 new)", out["reason"])
+        self.assertIn("already has", out["reason"])
+
+    def test_deletions_elsewhere_excuse_a_new_file(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(100, "grow"))
+        git(self.repo, "commit", "-qam", "grow")
+        (self.repo / "b.py").write_text(lines(200))
+        (self.repo / "a.py").write_text(lines(10))  # -100
+        out = self.run_hook("stop")
         self.assertNotIn("decision", out)
-        self.assertIn("(0 existing: +0 / -0; 1 new)", out["systemMessage"])
+        self.assertNotIn("add-only", out["systemMessage"])
+        self.assertIn("+200 / -100", out["systemMessage"])
 
     def test_large_change_nudges_once(self) -> None:
         (self.repo / "b.py").write_text(lines(500))
@@ -124,10 +135,15 @@ class HookCase(unittest.TestCase):
         self.assertEqual(first.get("decision"), "block")
         self.assertIn("already 500 lines", first["reason"])
         self.assertIn("independently shippable", first["reason"])
+        # Still large, but the split question is asked only once per session.
         (self.repo / "b.py").write_text(lines(520))
         second = self.run_hook("stop")
-        self.assertNotIn("decision", second)
-        self.assertIn("large change", second["systemMessage"])
+        self.assertNotIn("independently shippable", second["reason"])
+        # Nudge cap reached: the shape is reported, not blocked.
+        (self.repo / "b.py").write_text(lines(540))
+        third = self.run_hook("stop")
+        self.assertNotIn("decision", third)
+        self.assertIn("large change", third["systemMessage"])
 
     def test_feature_branch_is_measured_against_main(self) -> None:
         git(self.repo, "checkout", "-qb", "feature")
