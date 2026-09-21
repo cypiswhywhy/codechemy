@@ -1,17 +1,20 @@
 ---
 name: apply-all-increments
-description: Drive an OpenSpec change from its current state all the way to main, one increment at a time. Revalidates the change against today's main, then for each remaining task group runs /apply-increment, hands the PR to /push, waits for the user to merge, and continues; when every group is on main it archives the change and reports. Trigger on "/apply-all-increments", "apply all increments", "ship the whole change", "take this change to main", or when the user wants to be walked through every increment instead of re-invoking /apply-increment after each merge.
+description: Drive an OpenSpec change from its current state all the way to main, one increment at a time. Revalidates the change against today's main, runs /apply-increment for the next task group, hands the PR to /push, waits for the user to merge, then stops so the next increment starts in a fresh session; when every group is on main it archives the change and reports. Trigger on "/apply-all-increments", "apply all increments", "ship the whole change", "take this change to main", or when the user wants to be walked through every increment instead of re-invoking /apply-increment after each merge.
 ---
 
 # Apply all increments
 
 `/apply-increment` lands one task group and stops; the user re-invokes it after each merge.
-This skill is the loop around it. It walks the user through the entire change, from "is this
-proposal still valid" to "archived", and the user's only manual step is merging each PR.
-Everything else is delegated: the increment to `/apply-increment`, the PR and its review to
-`/push`, the archive to `/opsx:archive`. Nothing is held in the session: ticked tasks are on
-main, open PRs are on GitHub and merged ones are in the run log, so an interrupted or compacted
-run resumes where it stopped and still reports every increment.
+This skill is the loop around it, with one increment per session. It walks the user through
+the entire change, from "is this proposal still valid" to "archived"; the user's manual steps
+are merging each PR and starting a fresh session for the next increment. Everything else is
+delegated: the increment to `/apply-increment`, the PR and its review to `/push`, the archive
+to `/opsx:archive`. Nothing is held in the session: ticked tasks are on main, open PRs are on
+GitHub and merged ones are in the run log, so every run resumes where the last one stopped
+and the final run still reports every increment. One increment per session is deliberate: a
+session that carried eleven increments ran to a million tokens of context, and the sweeps
+that miss a site are the ones done late in such a session.
 
 Requirements: the `openspec` CLI, `gh`, the `/apply-increment` and `/push` skills, and a clean
 working tree.
@@ -39,8 +42,9 @@ working tree.
      design file. Apply the edits the user agrees to on a branch
      `docs/<change>-revalidate`, commit them as `docs(<change>): revalidate against main`, and
      stay on that branch so step 4 builds on it. Never edit code here.
-   - Announce `Plan: m increments remaining: <group names>`. Each increment is one PR round trip:
-     implementation, an automated review of a few minutes, and the user's merge.
+   - Announce `Plan: m increments remaining: <group names>`. Each increment is one PR round trip
+     in its own session: implementation, an automated review, the user's merge, then a fresh
+     session for the next.
 
 3. **Detect an in-flight increment.** `gh pr list --state open --search "<change>" --json
    number,headRefName,url`. An open PR on a `*/<change>-<k>-*` branch means a previous run stopped
@@ -53,18 +57,19 @@ working tree.
    then resume the loop; do not answer on their behalf.
 
 5. **Land the PR.** `/push` ends with the PR green and its URL. Ask exactly one question with
-   AskUserQuestion: `PR #n (increment k/m: <group name>) is green. Merge it, then continue.` with
-   the options **Merged, continue** and **Stop here**. Never merge it yourself. On continue,
-   verify with `gh pr view <n> --json state,mergedAt`; if it is not merged, say so and ask once
-   more; if it is still not merged, stop and report.
+   AskUserQuestion: `PR #n (increment k/m: <group name>) is green. Merge it.` with the options
+   **Merged** and **Stop here**. Never merge it yourself. On merged, verify with
+   `gh pr view <n> --json state,mergedAt`; if it is not merged, say so and ask once more; if it
+   is still not merged, stop and report.
 
-6. **Return to main.** Check out the default branch, `git pull --ff-only`, delete the local
-   increment branch. Append the merged PR to the run log,
+6. **Return to main and stop.** Check out the default branch, `git pull --ff-only`, delete the
+   local increment branch. Append the merged PR to the run log,
    `.git/apply-all-increments/<change>.log` (create the directory), one line of
    `<k/m, or "archive"> | <group name> | <PR url> | +N / -M`. It lives under `.git` so it never
    dirties the working tree that step 4 requires clean, and never needs a `.gitignore` entry.
-   Announce `Increment k/m merged: <group name>. Next: <group name>` and go to step 4. When no
-   unchecked task remains, go to step 7.
+   Then end the run: `Increment k/m merged: <group name>. Next: <group name> - start a fresh
+   session and run /apply-all-increments <change>.` Do not start the next increment in this
+   session, however small it is. When no unchecked task remains, go to step 7 instead.
 
 7. **Archive.** Every group is on main, so the archive gets its own branch,
    `chore/<change>-archive`. Invoke `/opsx:archive <change>` when it is available, since it also
@@ -82,13 +87,14 @@ working tree.
 
 ## Stopping and resuming
 
-- Stop when the user picks **Stop here**, when `/apply-increment` pauses and the user does not
-  resolve it, when `/push` reaches its review cap, or when a PR is still unmerged after the second
-  ask. Report exactly where: which increment, which step, what the user must do, and that
-  `/apply-all-increments <change>` resumes from there.
+- Every run stops after one merged increment (step 6). It also stops when the user picks
+  **Stop here**, when `/apply-increment` pauses and the user does not resolve it, when `/push`
+  reaches its review cap, or when a PR is still unmerged after the second ask. Report exactly
+  where: which increment, which step, what the user must do, and that
+  `/apply-all-increments <change>` in a fresh session resumes from there.
 - Step 3 makes resuming safe: the tasks file on main says which groups are done, GitHub says
-  which PR is waiting and the run log says what each merged increment was, so a fresh session or
-  a compacted context loses nothing. A resumed run appends to the existing log.
+  which PR is waiting and the run log says what each merged increment was, so a fresh session
+  loses nothing. A resumed run appends to the existing log.
 
 ## Rules
 

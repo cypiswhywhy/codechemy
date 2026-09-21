@@ -145,12 +145,12 @@ Eight, all installed with the plugin.
 |---|---|
 | [`/frame`](skills/frame/SKILL.md) | One screen of design brief - problem, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, how we will know - then one decision and straight into the code. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
 | [`/self-review`](skills/self-review/SKILL.md) | The mechanical pass over your own diff before anyone else reads it: symbols that do not exist, anchors that drifted, absolutes with a counterexample, claims the code cannot observe, duplication you just added, error paths, tests asserting a proxy |
-| [`/push`](skills/push/SKILL.md) | Branch to merge-ready PR: self-review, push, PR, then the automated review loop until green - Copilot, or `/code-review` in a fresh-context subagent when Copilot is unavailable |
+| [`/push`](skills/push/SKILL.md) | Branch to merge-ready PR: self-review, push, PR, then the automated review loop until green, capped at three cycles counted from the branch - Copilot, or one pass of `/code-review` in a fresh-context subagent when Copilot is unavailable |
 | [`/codebase-maintenance`](skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, verified commits, through to a merge-ready PR |
 | [`/maintenance-toolbox`](skills/maintenance-toolbox/SKILL.md) | Records a project's dead-code, unused-dependency, lint and test commands in its CLAUDE.md, so deletions can be proven |
 | [`/claude-customizations`](skills/claude-customizations/SKILL.md) | Read-only audit of every Claude Code customization, CLI and Desktop, against a fresh install |
 | [`/apply-increment`](skills/apply-increment/SKILL.md) | Implements one OpenSpec task group as its own PR, then stops |
-| [`/apply-all-increments`](skills/apply-all-increments/SKILL.md) | Repeats that to main, archiving the change at the end |
+| [`/apply-all-increments`](skills/apply-all-increments/SKILL.md) | Walks a change to main one increment per session, archiving the change at the end |
 
 `/apply-increment` and `/apply-all-increments` need the `openspec` CLI, and
 `/codebase-maintenance` and `/claude-customizations` need `python3`; a missing command disables
