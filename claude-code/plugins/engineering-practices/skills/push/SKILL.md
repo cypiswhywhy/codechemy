@@ -1,6 +1,6 @@
 ---
 name: push
-description: Push the current branch to GitHub, open a PR, run the automated code review loop (classify every comment, fix the correctness-class ones, decline the cosmetic ones, resolve threads, re-push) until the review is green, reporting each cycle's findings as a short classified table, then hand the PR back to the user for manual merge. GitHub Copilot is the reviewer; when Copilot is unavailable — not enabled for the repo, out of quota, or silent — it falls back to the local /code-review skill. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
+description: Push the current branch to GitHub, open a PR, run the automated code review loop (classify every comment, fix the correctness-class ones, decline the cosmetic ones, resolve threads, re-push) until the review is green, reporting each cycle's findings as a short classified table, then hand the PR back to the user for manual merge. GitHub Copilot is the reviewer; when Copilot is unavailable — not enabled for the repo, out of quota, or silent — it falls back to one bounded pass of the local /code-review skill. Use when the user says "/push", "push the change", "push and review", or indicates a change is ready to go to GitHub.
 ---
 
 # Push & automated review loop
@@ -140,24 +140,32 @@ Then, once:
    Launch one with the Agent tool and give it only the PR number and this instruction:
 
    ```
-   Run /code-review <pr-number> high --comment against this repository.
-   You did not write this change. Judge it only on the diff and the code around it.
-   Report the findings you posted.
+   Run /code-review <pr-number> medium --comment against this repository, on the code
+   this PR changes. Skip planning and prose files: anything under openspec/ and any
+   Markdown file. You did not write this change. Judge it only on the diff and the code
+   around it. Report the findings you posted.
    ```
 
-   Name the level explicitly, or the gate silently inherits whatever level the user
-   last typed. Never pass `--fix`: it applies findings without the Step 6 triage, and
-   triage is where a finding gets declined. If subagents are unavailable, run
-   `/code-review <pr-number> high --comment` in this session and say in Step 8 that the
+   `medium`, not `high`: at `high` the skill includes uncertain findings, and a reviewer
+   that shares the writer's blind spots turns those into fix commits it then reviews as
+   new code. Planning prose is skipped because a review of it produces one restatement
+   of the same claim per cycle and never converges (Step 9 exists to tune that for
+   Copilot; nothing tunes it here). Name the level explicitly, or the gate silently
+   inherits whatever level the user last typed. Never pass `--fix`: it applies findings
+   without the Step 6 triage, and triage is where a finding gets declined. If subagents
+   are unavailable, run the same command in this session and say in Step 8 that the
    review shared the writing context.
 3. **Record that the local reviewer owns the gate for the rest of this run.** Do not
-   re-attempt Copilot on later cycles — each attempt spends Step 4's wait to learn
-   what you already know.
+   re-attempt Copilot — each attempt spends Step 4's wait to learn what you already know.
 
-Then continue at **Step 5**. What the local review posts are ordinary PR review
-threads, so Steps 5–8 run as written once you account for who authored them. Step 4
-does not apply on this path: the review returns inside the session rather than
-arriving minutes later.
+**This path runs exactly one cycle.** Run Steps 5, 6 and 7's table as written, commit
+the blocking fixes as `address code review (cycle 1/1): <summary>`, push, resolve every
+thread, and go straight to Step 8 - no re-review. The same model reading its own fixes
+finds the next layer of the same blind spot, not an independent defect, and each fix
+commit is new code it reads for the first time; measured over eleven PRs in one
+repository, that loop spent twice as long reviewing as implementing and ran to eight and
+nine cycles before the cap was read. What one pass leaves is the user's read, and Step 8
+says so. Step 4 does not apply on this path: the review returns inside the session.
 
 ## Step 4 — Wait for the review
 
@@ -280,10 +288,6 @@ Never sweep a `pattern` or `style` class — a cosmetic class swept across the c
 is the largest single source of next-cycle findings. And if the previous cycle
 produced a `↺` row (Step 7), skip the sweep this cycle and take the literal fix.
 
-If the class has recurred before, it is already named in
-`.claude/code-review-lessons.md` (Step 10) — read the relevant section before
-sweeping, since a past occurrence usually names the grep that finds it.
-
 ### Reply and resolve
 
 Whatever the decision, **reply in the thread** — one or two sentences ("Fixed in
@@ -368,20 +372,29 @@ Then:
 
 1. If the cycle produced **no code changes**, the loop is over — go to Step 8.
    Replies and resolutions trigger no re-review, so there is nothing to wait for.
-2. Otherwise commit the fixes as one commit (`address code review: <summary>`),
-   ending with `Co-Authored-By: Claude <noreply@anthropic.com>`, push, and go back
-   to Step 3. On the Step 3a path, re-run `/code-review` against the PR instead:
-   there is nothing to request and nothing to wait for.
+2. Otherwise commit the fixes as one commit, `address code review (cycle N/3):
+   <summary>` with N the cycle just completed, ending with
+   `Co-Authored-By: Claude <noreply@anthropic.com>`, push, and go back to Step 3.
+   On the Step 3a path the loop is already over after cycle 1 - go to Step 8.
 
 **Green condition:** the latest review covers the current head commit, raised no
 *blocking* findings, and no thread is left unresolved. New `pattern` and `style`
 comments on a later cycle do not reopen the loop — they get a reply, a resolution
 and a row in the table.
 
-**Safety cap: 3 cycles.** A cycle costs a triage pass and, on the Copilot path, 4–6
-minutes of waiting; by the fourth the reviewer is mostly reviewing the fixes rather
-than the change. If blocking findings remain after 3 cycles, stop, and hand the open
-ones to the user with each cycle's table instead of looping.
+**Safety cap: 3 cycles, counted from the branch, not from memory.** Before starting a
+cycle, count the fix commits already on the branch:
+
+```bash
+git log origin/<default-branch>..HEAD --oneline --grep='^address code review (cycle'
+```
+
+That number plus one is the cycle you are in. At three, stop: hand the open findings to
+the user with each cycle's table instead of looping. The count lives in git so a
+compacted or resumed session cannot lose it - a session that ran eight and nine cycles on
+two consecutive PRs had this cap in its instructions and no way to notice it had passed.
+A cycle costs a triage pass and, on the Copilot path, 4–6 minutes of waiting; by the
+fourth the reviewer is mostly reviewing the fixes rather than the change.
 
 ## Step 8 — Hand off
 
@@ -492,8 +505,10 @@ it to the repo-tracked ledger at `.claude/code-review-lessons.md`, creating the 
 if absent: a title, a sentence saying it tallies recurring classes of mistake caught
 in review, and the convention below. One `##` section per class, and under it one
 bullet per occurrence giving the date, the PR URL, and a short phrase naming the
-instance. If the class already has a section, add a bullet to it — never open a
-near-duplicate section.
+instance - one line, not a narrative. If the class already has a section, add a bullet
+to it — never open a near-duplicate section. Find the section with `grep -n '^## '`
+over the file rather than reading it whole: the ledger grows for the life of the
+project and is never worth a full read.
 
 Keeping the ledger in git is the point: every teammate running this skill
 contributes to the same tally, so a class crosses the threshold on the project's
