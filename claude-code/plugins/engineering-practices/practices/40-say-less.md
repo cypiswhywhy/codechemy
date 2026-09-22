@@ -18,4 +18,5 @@ carry something the code itself cannot.
   for someone else, keep commented-out code, or open a module with a docstring listing what the
   file visibly contains.
 - Match the density of the file you are in. A change whose added lines are mostly prose is a
-  change that was not read closely enough.
+  change that was not read closely enough. The Stop hook measures this per file and blocks
+  once when a file's growth is mostly prose and well past its own density.

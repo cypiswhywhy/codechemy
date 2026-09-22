@@ -265,6 +265,9 @@ not a commit on this PR.
   findings next cycle. The leave-it-smaller pass belongs to the commits you wrote
   before the first push, not to a review fix.
 - Prefer the edit that introduces no new name, file or abstraction.
+- A `false claim` in a comment or docstring is fixed by deleting or shortening the prose, not
+  by rewriting it longer. A comment that needed a correction was already saying more than the
+  code could vouch for ("Say less in the code").
 - Before pushing, read your own fix diff (`git diff HEAD~`) against the Step 0
   checklist. Anything a later cycle raises against a fix commit is a cycle you
   paid for yourself.

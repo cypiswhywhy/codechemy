@@ -5,9 +5,10 @@
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
 Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and blocks the stop when it fails one of four checks - the change only
+plus the working tree) and blocks the stop when it fails one of five checks - the change only
 added lines, it is already large, it edits source without touching a test in a repository that
-has tests, or the summary does not state the diff shape. The nudge is bounded: never while the
+has tests, a source file grew mostly by comments and docstrings, or the summary does not state
+the diff shape. The nudge is bounded: never while the
 agent is already continuing because of a stop hook, never for a diff it has already nudged on,
 each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in
 all. Otherwise the shape is shown to the user as a one-line system message.
@@ -20,13 +21,16 @@ Stdlib only. Never fails the session: any unexpected error is logged and exits 0
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import tokenize
 from pathlib import Path, PurePosixPath
 
 
@@ -45,6 +49,12 @@ MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
 LARGE = int(_env_number("LEAVE_IT_SMALLER_LARGE", 400))
 # Upper bound on blocked stops per session.
 MAX_NUDGES = int(_env_number("LEAVE_IT_SMALLER_MAX_NUDGES", 2))
+# A source file that grew by at least PROSE_MIN_ADDED lines, of which PROSE_SHARE or more are
+# comments or docstrings, and by PROSE_GAP more than the file's own density, reads as
+# "prose-heavy": the change did not match the density of the file it is in.
+PROSE_MIN_ADDED = 20
+PROSE_SHARE = _env_number("LEAVE_IT_SMALLER_PROSE_SHARE", 0.40)
+PROSE_GAP = 0.15
 
 CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 STATE_DIR = CONFIG_DIR / "leave-it-smaller" / "sessions"
@@ -69,6 +79,16 @@ NON_SOURCE_SUFFIXES = {
     "", ".md", ".markdown", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini",
     ".cfg", ".conf", ".lock", ".csv", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico",
     ".gitignore", ".editorconfig", ".env",
+}
+# Line-comment prefixes per language, for the prose count outside Python (where the tokenizer
+# and the AST count comments and docstrings exactly).
+COMMENT_PREFIXES = {
+    ".js": ("//", "/*", "*"), ".jsx": ("//", "/*", "*"), ".ts": ("//", "/*", "*"),
+    ".tsx": ("//", "/*", "*"), ".go": ("//", "/*", "*"), ".rs": ("//", "/*", "*"),
+    ".java": ("//", "/*", "*"), ".kt": ("//", "/*", "*"), ".c": ("//", "/*", "*"),
+    ".h": ("//", "/*", "*"), ".cpp": ("//", "/*", "*"), ".cs": ("//", "/*", "*"),
+    ".swift": ("//", "/*", "*"), ".php": ("//", "/*", "*", "#"), ".rb": ("#",),
+    ".sh": ("#",), ".bash": ("#",), ".zsh": ("#",), ".pl": ("#",), ".r": ("#",),
 }
 # `+45 / -8`, `+45/-8`, `+1,024 / -20`: the diff shape every summary has to end with.
 # The minus accepts the typographic dashes a Markdown summary is routinely written with,
@@ -106,6 +126,15 @@ TESTS_MESSAGE = (
     "fails against the old behaviour before you keep it - a test that cannot fail asserts "
     "nothing. If the change really alters no behaviour (a rename, an extraction, config, "
     "docs), say which in your summary, with the test command you ran and its result."
+)
+PROSE_MESSAGE = (
+    "These files grew mostly by comments and docstrings, well past the density they had:\n"
+    "{files}\n"
+    "A comment says why, never what, and a docstring is one line stating the contract. Before "
+    "you finish, go through what you added: delete every comment that narrates the change or "
+    "the review that shaped it, restates the line under it, or explains a line you could "
+    "rename or split instead; cut each docstring to the contract and the surprise; keep only "
+    "the reasons that live outside the code. Say what you removed, with the diff shape."
 )
 SUMMARY_MESSAGE = (
     "Your summary does not state the diff shape. End it with `+N / -M` and the files touched, "
@@ -204,6 +233,70 @@ def is_source_path(path: str) -> bool:
     return suffix not in NON_SOURCE_SUFFIXES
 
 
+def prose_lines(path: str, text: str) -> int:
+    """Lines of comments and docstrings in ``text``; 0 for a language this does not read."""
+    suffix = PurePosixPath(path).suffix.lower()
+    if suffix == ".py":
+        found: set[int] = set()
+        try:
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+                if tok.type == tokenize.COMMENT:
+                    found.add(tok.start[0])
+            for node in ast.walk(ast.parse(text)):
+                if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    doc = node.body[0] if node.body else None
+                    if (
+                        isinstance(doc, ast.Expr)
+                        and isinstance(doc.value, ast.Constant)
+                        and isinstance(doc.value.value, str)
+                    ):
+                        found.update(range(doc.lineno, (doc.end_lineno or doc.lineno) + 1))
+        except (SyntaxError, ValueError, tokenize.TokenError):
+            return sum(1 for line in text.splitlines() if line.lstrip().startswith("#"))
+        return len(found)
+    prefixes = COMMENT_PREFIXES.get(suffix)
+    if not prefixes:
+        return 0
+    return sum(1 for line in text.splitlines() if line.lstrip().startswith(prefixes))
+
+
+def prose_heavy_files(root: str, base: str | None, paths: list[str]) -> list[str]:
+    """One line per source file whose growth was mostly comments and docstrings.
+
+    A file counts when it grew by at least PROSE_MIN_ADDED lines, at least PROSE_SHARE of that
+    growth is prose, and that share exceeds the file's own density before the change by
+    PROSE_GAP - the practice is to match the density of the file you are in, so a file that
+    was already half prose is not asked to change.
+    """
+    rows = []
+    for path in paths:
+        if not is_source_path(path) or PurePosixPath(path).suffix.lower() not in {".py", *COMMENT_PREFIXES}:
+            continue
+        try:
+            after = (Path(root) / path).read_text(errors="replace")
+        except OSError:
+            continue
+        before = ""
+        if base is not None:
+            try:
+                before = git(root, "show", f"{base}:{path}")
+            except GitError:
+                pass
+        grown = after.count("\n") - before.count("\n")
+        if grown < PROSE_MIN_ADDED:
+            continue
+        prose_grown = prose_lines(path, after) - prose_lines(path, before)
+        share = prose_grown / grown
+        before_lines = before.count("\n")
+        density = prose_lines(path, before) / before_lines if before_lines else 0.0
+        if share >= PROSE_SHARE and share >= density + PROSE_GAP:
+            rows.append(
+                f"- {path}: +{grown} lines, {prose_grown} of them comments or docstrings "
+                f"({share:.0%}); the file was {density:.0%} before"
+            )
+    return rows
+
+
 def repo_has_tests(root: str) -> bool:
     """Whether the repository has a test harness at all; without one there is nothing to ask for."""
     try:
@@ -255,6 +348,7 @@ def diff_shape(cwd: str) -> dict | None:
             rows.append((path, lines, 0, True))
 
     existing = [r for r in rows if not r[3]]
+    prose_heavy = prose_heavy_files(root, base, [r[0] for r in rows if r[1] >= PROSE_MIN_ADDED])
     changed_source = [r[0] for r in rows if is_source_path(r[0])]
     changed_tests = [r[0] for r in rows if is_test_path(r[0])]
     fingerprint = hashlib.sha1(
@@ -268,6 +362,7 @@ def diff_shape(cwd: str) -> dict | None:
         "existing_added": sum(r[1] for r in existing),
         "existing_deleted": sum(r[2] for r in existing),
         "new_files": len(rows) - len(existing),
+        "prose_heavy": prose_heavy,
         "fingerprint": fingerprint,
         "root": root,
         "source_files": len(changed_source),
@@ -395,6 +490,9 @@ def run_stop(payload: dict) -> None:
     ):
         reasons.append(TESTS_MESSAGE.format(**shape))
         state["tests_nudged"] = True
+    if can_nudge and not state.get("prose_nudged") and shape["prose_heavy"]:
+        reasons.append(PROSE_MESSAGE.format(files="\n".join(shape["prose_heavy"][:5])))
+        state["prose_nudged"] = True
     if can_nudge and not state.get("summary_nudged") and shape["added"] + shape["deleted"] >= MIN_ADDED:
         summary_text = last_assistant_text(payload.get("transcript_path"))
         if summary_text is not None and not DIFF_SHAPE_RE.search(summary_text):
