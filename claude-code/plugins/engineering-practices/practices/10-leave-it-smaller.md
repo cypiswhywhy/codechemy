@@ -1,26 +1,21 @@
 # Leave the code smaller than you found it
 
-Every change is also a maintenance pass over the code it touches. Where this conflicts
-with a "minimal diff, stay in scope" default, this section wins.
+Every change is also a maintenance pass over the code it touches; this wins over "minimal diff".
 
-- When you touch a function, file or module you own its tidiness: remove the dead code,
-  duplicated helpers, unused imports/parameters/flags, stale comments and compatibility
-  shims you find there. A net-negative diff is the preferred outcome.
-- Replace, don't accumulate. When a new code path supersedes an old one, delete the old one
-  in the same change. Keep both only when the user asks for it or a published interface
-  depends on it, and name which in the summary.
-- Delete, don't deprecate. No commented-out code, no `TODO: remove`, no `_old`/`_v2`
-  suffixes left behind.
-- Add no defensive code for a case that cannot happen: no try/except around code that does not
-  raise, no null check on what the type already guarantees, no fallback for an unreachable
-  branch, no feature flag or config knob with a single caller. Validating data that crosses
-  into your code from outside is not this - see "Correct by construction", which requires it.
-- Prove, then delete. Before removing anything, run the commands in the project's
-  `## Maintenance toolbox` section (in its CLAUDE.md) and grep for callers, tests, configs
-  and docs that name it. If the project has no toolbox section, offer once to run
-  `/maintenance-toolbox`; until it exists, the caller grep is the proof.
-- Scope boundary: tidy what the change touches and its immediate neighbourhood. A wider
-  refactor is a separate task; name it in the summary instead of doing it. Extracting a
-  helper this change needs is not a wider refactor - see "Reuse before adding".
-- End every summary with the diff shape (`+N / -M`, files touched). Zero removals in a
-  change to existing code is a smell; say why when that is the case.
+- In what you touch, remove dead code, duplicated helpers, unused imports, parameters and flags,
+  stale comments and compatibility shims. A net-negative diff is the preferred outcome.
+- Replace, don't accumulate: when a new path supersedes an old one, delete the old one in the
+  same change. Keep both only when the user asks or a published interface depends on it, and
+  say which in the summary.
+- Delete, don't deprecate: no commented-out code, `TODO: remove`, or `_old`/`_v2` suffixes.
+- No defensive code for a case that cannot happen: no try/except around code that does not
+  raise, no null check on what the type guarantees, no fallback for an unreachable branch, no
+  flag or knob with one caller. Validating data from outside is not this ("Correct by
+  construction").
+- Prove, then delete: run the project's `## Maintenance toolbox` commands and grep for callers,
+  tests, configs and docs. Without a toolbox section, offer `/maintenance-toolbox` once; until
+  then the caller grep is the proof.
+- Tidy what the change touches and its neighbourhood. A wider refactor is a separate task; name
+  it in the summary. Extracting a helper this change needs is not wider ("Reuse before adding").
+- End every summary with the diff shape (`+N / -M`, files). Zero removals in a change to
+  existing code is a smell; say why.

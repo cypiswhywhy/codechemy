@@ -3,7 +3,7 @@
 
 Reads `practices/*.md` in name order and writes them to stdout, which Claude Code adds to
 the session. This is the contract layer of the plugin: the rules the agent should hold for
-the whole session, with the reason each one exists.
+the whole session, stated as rules so they cost the context they are worth.
 """
 
 from __future__ import annotations
