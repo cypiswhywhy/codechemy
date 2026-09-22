@@ -235,6 +235,36 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(2) + lines(60, "other"))
         self.assertNotIn("no test changed with it", json.dumps(self.run_hook("stop")))
 
+    # ----- the prose-density check -----
+
+    def commented(self, code: int, prose: int) -> str:
+        return "".join(f"# why {i}\n" for i in range(prose)) + "".join(f"x{i} = {i}\n" for i in range(code))
+
+    def test_a_file_that_grew_mostly_by_comments_is_nudged_once(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + self.commented(code=10, prose=20))
+        out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("a.py: +30 lines, 20 of them comments or docstrings (67%)", out["reason"])
+        (self.repo / "a.py").write_text(lines(10) + self.commented(code=10, prose=40))
+        self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
+
+    def test_a_change_matching_the_files_own_density_passes(self) -> None:
+        (self.repo / "b.py").write_text(self.commented(code=10, prose=10))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "half prose already")
+        (self.repo / "b.py").write_text(self.commented(code=20, prose=22))
+        self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
+
+    def test_a_new_file_that_is_mostly_docstring_is_nudged(self) -> None:
+        doc = "".join(f"    paragraph {i}\n" for i in range(20))
+        (self.repo / "c.py").write_text(f'def f():\n    """Contract.\n\n{doc}    """\n    return 1\n')
+        out = self.run_hook("stop")
+        self.assertIn("c.py: +25 lines, 23 of them comments or docstrings", out["reason"])
+
+    def test_small_growth_is_not_measured_for_prose(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + self.commented(code=0, prose=15))
+        self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
+
     # ----- the summary-shape check -----
 
     def transcript(self, *texts: str) -> str:
