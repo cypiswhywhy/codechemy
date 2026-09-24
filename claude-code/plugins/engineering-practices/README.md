@@ -10,12 +10,13 @@ in every project**. Three kinds of resource that combine into one behaviour:
 | `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
-seven practices, two hooks and eight skills, about six problems: agents start writing before
+eight practices, two hooks and eight skills, about seven problems: agents start writing before
 they have understood what is wanted; they add lines and rarely remove them, and turn a plan
 into one thousand-line PR - or into six PRs none of which is useful on its own; they write a
 near-copy of a helper instead of generalising the one that already exists; they leave errors
-swallowed and input unchecked for the review to find; they document every line they write; and
-they write the code first and the tests, if at all, afterwards.
+swallowed and input unchecked for the review to find; they document every line they write;
+they write the code first and the tests, if at all, afterwards; and they bury the answer to the
+user under preamble, recap and jargon.
 
 ## Install
 
@@ -100,6 +101,10 @@ clone of it gets the plugin with no command at all.
 - **40-say-less.md**: comments carry the *why* only; one-line docstrings stating the contract,
   none at all where the name and signature already say it; length only for a reason outside the
   code; no change narration, `TODO`s or commented-out code; match the density of the file.
+- **45-write-plainly.md**: what goes to the reader - chat, questions, summaries, PR descriptions,
+  commit bodies - leads with the answer, in short sentences and common words, with the concrete
+  `file:line`, command or number; one topic per message; no preamble, recap, closing offer or
+  empty hedge; the summary items the other practices require stay, one line each.
 
 ### Hook: `practices` (`hooks/practices.py`)
 
@@ -145,7 +150,7 @@ Eight, all installed with the plugin.
 
 | Skill | What it does |
 |---|---|
-| [`/frame`](skills/frame/SKILL.md) | One screen of design brief - problem, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, how we will know - then one decision and straight into the code. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
+| [`/frame`](skills/frame/SKILL.md) | One screen of design brief and plan - problem, what was assumed, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, then the landing points with the test that proves each and how it can fail - then one decision and straight into the code. Says up front whether it frames at all. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
 | [`/self-review`](skills/self-review/SKILL.md) | The mechanical pass over your own diff before anyone else reads it: symbols that do not exist, anchors that drifted, absolutes with a counterexample, claims the code cannot observe, duplication you just added, error paths, tests asserting a proxy |
 | [`/push`](skills/push/SKILL.md) | Branch to merge-ready PR: self-review, push, PR, then the automated review loop until green, capped at three cycles counted from the branch - Copilot, or one pass of `/code-review` in a fresh-context subagent when Copilot is unavailable |
 | [`/codebase-maintenance`](skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, verified commits, through to a merge-ready PR |
