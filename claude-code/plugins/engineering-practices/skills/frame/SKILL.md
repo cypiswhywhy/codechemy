@@ -1,13 +1,13 @@
 ---
 name: frame
-description: Produce a short design brief before implementing - problem as an outcome, the invariant, the constraints found in the repo, the approach chosen, the approach rejected and why, blast radius, and how we will know it worked. Use when the change alters a published contract or API, crosses a module boundary, introduces a dependency or a data migration, or is hard to undo; and on "/frame", "design this first", "how should we build this", "what are the options", "think before coding". Refuses and hands back when the change is small enough to just write.
+description: Produce a short design brief and plan before implementing - problem as an outcome, what was assumed, the invariant, the constraints found in the repo, the approach chosen, the approach rejected and why, blast radius, and the landing points with the test that proves each one. Use when the change alters a published contract or API, crosses a module boundary, introduces a dependency or a data migration, or is hard to undo; and on "/frame", "design this first", "how should we build this", "what are the options", "think before coding". Refuses and hands back when the change is small enough to just write.
 ---
 
 # Frame
 
 A senior engineer's edge is mostly spent before the first line: on deciding what to build and
 which shape it takes. This skill makes that step explicit and cheap. It produces **one screen
-of brief**, gets one decision from the user, and hands off to implementation.
+of brief and plan**, gets one decision from the user, and hands off to implementation.
 
 It writes no code and creates no file unless the repo already keeps decision records.
 
@@ -24,11 +24,15 @@ Frame when **any** of these holds:
 - undoing it after release costs more than a revert
 - the user asked for options, or two readings of the request lead to different work
 
-Otherwise say in one line why not - "single module, reversible, one obvious shape" - and go
-write the code. The practice `05-understand-first` already covers the small case in four lines.
+Say the call in one line before anything else, so the user can overrule it:
 
-**If the repo uses OpenSpec** (an `openspec/` directory), this is `/opsx:propose`'s job. Say so
-and defer to it rather than producing a second, competing artifact.
+- `Framing: <which condition holds>` - continue to step 2.
+- `Not framing: <why>` - e.g. "single module, reversible, one obvious shape" - and go write
+  the code. The practice `05-understand-first` already covers the small case in four lines.
+- `Deferring to OpenSpec` - a condition holds and the repo has an `openspec/` directory, so
+  the design and the task list are `/opsx:propose`'s job. Hand over rather than producing a
+  second, competing artifact.
+  Without OpenSpec, the Plan block in step 3 is the task list.
 
 ## Step 2 — Gather, do not guess
 
@@ -52,6 +56,7 @@ One screen. This shape, in this order, and nothing longer:
 
 ```markdown
 **Problem** - <the outcome someone wants, one line, no solution in it>
+**Assumed** - <what you took as given that the user did not say; "nothing" is an answer>
 **Invariant** - <what is true now and must still be true after>
 **Constraints** - <2-4 lines, each citing a file, a decision record, or the user's own words>
 
@@ -59,7 +64,12 @@ One screen. This shape, in this order, and nothing longer:
 **Rejected: <name>** - <one line> because <one line>.
 
 **Blast radius** - <files/modules; the public surface it changes; migration and rollback>
-**How we will know** - <the test or measurement that shows it worked>
+
+**Plan**
+1. <landing point> - <files> - done when <test or measurement>
+2. ...
+**Out of scope** - <what this deliberately leaves, one line>
+**Can fail by** - <2-3 inputs or conditions, each with the plan step whose test covers it>
 **Open** - <at most two questions, each with your recommendation>
 ```
 
@@ -70,7 +80,13 @@ Rules that keep it honest:
   say what makes it so - that is the constraint, and it belongs in `Constraints`.
 - **The problem line contains no solution.** "Users lose their draft when the tab closes" is a
   problem; "add localStorage persistence" is the approach with the problem hidden inside it.
-- **"How we will know" is a test you could write, or a number you could read** - not "it works".
+- **`Assumed` is the part the user most needs to read.** Anything the request did not say but
+  the approach depends on goes there, not into `Problem` or `Constraints`.
+- **Each plan step is a landing point** as `20-small-increments` defines it: merged on its own,
+  someone is better off. Its "done when" is a test you could write or a number you could read,
+  not "it works". Five steps at most; more means the change holds more than one decision (below).
+- **Every `Can fail by` line names a step whose test covers it.** A line no step covers means a
+  test is missing from that step; add it there.
 - **Two open questions maximum**, each with your recommendation attached, so the user can answer
   with a word. More than two means you did step 2 too shallowly.
 - **No estimates in the brief** unless the user asked for one.
@@ -79,27 +95,32 @@ Rules that keep it honest:
 
 ## Step 4 — One decision, then go
 
-Ask once, with `AskUserQuestion`: the chosen approach against the rejected one, plus any open
-question. Carry your recommendation in the first option.
+Ask once, with `AskUserQuestion`: the brief and plan as shown against the rejected approach,
+plus any open question. Carry your recommendation in the first option. An answer that changes
+the plan gets the changed lines shown again, not the whole brief.
 
-Then, before implementing, name the landing points the way `20-small-increments` requires - the
-groups this will land in, each one shippable on its own - and start on the first. Where the
-repo uses OpenSpec and the change is large, `/apply-increment` takes it from here.
+Then start on plan step 1. The plan already names the landing points `20-small-increments`
+asks for.
 
 ## Step 5 — Record it only if it outlives the change
 
 Most briefs are scaffolding and belong in the conversation. Write one down only when the
 decision will be asked about again - and then into whatever the repo already keeps: an ADR
-under `docs/internals`, an OpenSpec design, the format the neighbours use. Do not introduce a
-new location or a new template for it; if the repo records nothing, the commit message body is
-the right home for the two lines that matter.
+under `docs/internals`, the format the neighbours use. Do not introduce a new location or a new
+template for it; if the repo records nothing, the commit message body is the right home for the
+two lines that matter.
+
+A plan with more than one step lands in more than one PR. Put the Plan block in the first PR's
+description, with each step ticked as it merges, so a later session can pick up the
+next step from there.
 
 ## Rules
 
-- Never write production code in this skill. It ends at an agreed approach.
+- Never write production code in this skill. It ends at an agreed approach and plan.
 - Never invent a constraint, a requirement or a prior decision. Cite, or leave it out.
 - Never re-open a decision the repo already recorded. Name it as a constraint; if it is the
   thing blocking a good design, say so as an open question and let the user decide.
 - Keep the user's framing where it is adequate. Reframing what the user already stated clearly
   is not design work.
-- One screen, one decision, no file unless step 5 applies.
+- One screen, one decision, no file unless step 5 applies. The PR description in step 5 is not
+  a file.

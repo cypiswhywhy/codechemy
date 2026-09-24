@@ -145,7 +145,7 @@ Eight, all installed with the plugin.
 
 | Skill | What it does |
 |---|---|
-| [`/frame`](skills/frame/SKILL.md) | One screen of design brief - problem, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, how we will know - then one decision and straight into the code. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
+| [`/frame`](skills/frame/SKILL.md) | One screen of design brief and plan - problem, what was assumed, invariant, constraints cited from the repo, the approach chosen and one rejected with its reason, blast radius, then the landing points with the test that proves each and how it can fail - then one decision and straight into the code. Says up front whether it frames at all. Refuses when the change is small enough to just write, and defers to `/opsx:propose` where the repo uses OpenSpec |
 | [`/self-review`](skills/self-review/SKILL.md) | The mechanical pass over your own diff before anyone else reads it: symbols that do not exist, anchors that drifted, absolutes with a counterexample, claims the code cannot observe, duplication you just added, error paths, tests asserting a proxy |
 | [`/push`](skills/push/SKILL.md) | Branch to merge-ready PR: self-review, push, PR, then the automated review loop until green, capped at three cycles counted from the branch - Copilot, or one pass of `/code-review` in a fresh-context subagent when Copilot is unavailable |
 | [`/codebase-maintenance`](skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, verified commits, through to a merge-ready PR |

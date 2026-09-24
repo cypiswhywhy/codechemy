@@ -1,7 +1,7 @@
 {
   "name": "engineering-practices",
   "description": "Durable defaults for every session: understand before you change, leave the code smaller than you found it, reuse before adding, ship small increments, work test-driven, be correct by construction, say less in the code. A SessionStart hook that states the contract, a Stop hook that measures the change against it, and eight skills covering the work around the code - framing it, reviewing your own diff, shipping the PR, auditing the repo.",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "author": {
     "name": "Cyprian Nosek"
   },

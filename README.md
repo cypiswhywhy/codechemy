@@ -45,7 +45,7 @@ All eight ship inside the plugin, so the install above is the only step.
 
 | Skill | What it does |
 |---|---|
-| [`/frame`](claude-code/plugins/engineering-practices/skills/frame/SKILL.md) | One screen of design brief before implementing — problem, invariant, constraints, the approach chosen and one rejected — then one decision and into the code |
+| [`/frame`](claude-code/plugins/engineering-practices/skills/frame/SKILL.md) | One screen of design brief and plan before implementing — problem, assumptions, constraints, the approach chosen and one rejected, the landing points and their tests — then one decision and into the code |
 | [`/self-review`](claude-code/plugins/engineering-practices/skills/self-review/SKILL.md) | The mechanical pass over your own diff before anyone else reads it |
 | [`/push`](claude-code/plugins/engineering-practices/skills/push/SKILL.md) | Runs `/self-review`, pushes, opens a PR, and iterates on the automated review until green — Copilot, or `/code-review` in a fresh-context subagent when Copilot is unavailable |
 | [`/codebase-maintenance`](claude-code/plugins/engineering-practices/skills/codebase-maintenance/SKILL.md) | Audits a repo across 11 quality dimensions and lands the fixes as small, revertible commits |
