@@ -10,12 +10,13 @@ in every project**. Three kinds of resource that combine into one behaviour:
 | `skills/<name>/` | `/<name>` in any session | **the know-how**: procedures the agent runs when asked or hinted |
 
 Adding a practice is a new file in `practices/`; the hook picks it up. Today the plugin holds
-seven practices, two hooks and eight skills, about six problems: agents start writing before
+eight practices, two hooks and eight skills, about seven problems: agents start writing before
 they have understood what is wanted; they add lines and rarely remove them, and turn a plan
 into one thousand-line PR - or into six PRs none of which is useful on its own; they write a
 near-copy of a helper instead of generalising the one that already exists; they leave errors
-swallowed and input unchecked for the review to find; they document every line they write; and
-they write the code first and the tests, if at all, afterwards.
+swallowed and input unchecked for the review to find; they document every line they write;
+they write the code first and the tests, if at all, afterwards; and they bury the answer to the
+user under preamble, recap and jargon.
 
 ## Install
 
@@ -100,6 +101,10 @@ clone of it gets the plugin with no command at all.
 - **40-say-less.md**: comments carry the *why* only; one-line docstrings stating the contract,
   none at all where the name and signature already say it; length only for a reason outside the
   code; no change narration, `TODO`s or commented-out code; match the density of the file.
+- **45-write-plainly.md**: what goes to the reader - chat, questions, summaries, PR descriptions,
+  commit bodies - leads with the answer, in short sentences and common words, with the concrete
+  `file:line`, command or number; one topic per message; no preamble, recap, closing offer or
+  empty hedge; the summary items the other practices require stay, one line each.
 
 ### Hook: `practices` (`hooks/practices.py`)
 

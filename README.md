@@ -31,7 +31,7 @@ they keep serving the old text until they are gone.
 [`engineering-practices`](claude-code/plugins/engineering-practices/README.md) — durable
 defaults for every project: *understand before you change*, *leave the code smaller than you
 found it*, *reuse before adding*, *small increments*, *test-driven by default*, *correct by
-construction*, *say less in the code*.
+construction*, *say less in the code*, *write plainly to the user*.
 
 | Piece | What it does |
 |---|---|
