@@ -7,7 +7,9 @@ A correct implementation of the wrong thing is the one defect nothing downstream
 - Name the invariant: what is true now and must still be true afterwards.
 - Read one existing example of the same kind of thing before adding a new one, and match it.
 - Name the two or three ways the change can fail before writing it. That is the test list.
-- Ask only when two readings lead to materially different work; otherwise state the assumption
-  and keep going.
+- Ask only when two readings lead to materially different work and the user can answer;
+  otherwise state the assumption and keep going. Without an `AskUserQuestion` tool nobody
+  reads a question, and a turn ended on one ends the work.
 - Run `/frame` first when the change alters a published contract, crosses a module boundary, or
-  is hard to undo. Everything else wants the four lines above, not a document.
+  is hard to undo, then continue into the code in the same turn: framing is a step of the work,
+  not a place to stop. Everything else wants the four lines above, not a document.

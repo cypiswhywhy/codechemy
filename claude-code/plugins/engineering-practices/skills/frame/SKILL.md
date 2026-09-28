@@ -1,15 +1,16 @@
 ---
 name: frame
-description: Produce a short design brief and plan before implementing - problem as an outcome, what was assumed, the invariant, the constraints found in the repo, the approach chosen, the approach rejected and why, blast radius, and the landing points with the test that proves each one. Use when the change alters a published contract or API, crosses a module boundary, introduces a dependency or a data migration, or is hard to undo; and on "/frame", "design this first", "how should we build this", "what are the options", "think before coding". Refuses and hands back when the change is small enough to just write.
+description: Produce a short design brief and plan before implementing - problem as an outcome, what was assumed, the invariant, the constraints found in the repo, the approach chosen, the approach rejected and why, blast radius, and the landing points with the test that proves each one. Use when the change alters a published contract or API, crosses a module boundary, introduces a dependency or a data migration, or is hard to undo; and on "/frame", "design this first", "how should we build this", "what are the options", "think before coding". Refuses and hands back when the change is small enough to just write. Continues into the code in the same turn; waits for an answer only when the user asked for the design and can be asked.
 ---
 
 # Frame
 
 A senior engineer's edge is mostly spent before the first line: on deciding what to build and
 which shape it takes. This skill makes that step explicit and cheap. It produces **one screen
-of brief and plan**, gets one decision from the user, and hands off to implementation.
+of brief and plan**, settles the one decision in it, and goes on into implementation.
 
-It writes no code and creates no file unless the repo already keeps decision records.
+The brief holds no code, and the skill creates no file unless the repo already keeps decision
+records.
 
 ## Step 1 — Check it is worth framing
 
@@ -87,6 +88,9 @@ Rules that keep it honest:
   not "it works". Five steps at most; more means the change holds more than one decision (below).
 - **Every `Can fail by` line names a step whose test covers it.** A line no step covers means a
   test is missing from that step; add it there.
+- **`Out of scope` never holds something the request asks for.** That includes a standing
+  instruction such as "where the code and the documented rules disagree, fix the code": a
+  defect it covers in the path being changed is a plan step, not out of scope.
 - **Two open questions maximum**, each with your recommendation attached, so the user can answer
   with a word. More than two means you did step 2 too shallowly.
 - **No estimates in the brief** unless the user asked for one.
@@ -95,9 +99,17 @@ Rules that keep it honest:
 
 ## Step 4 — One decision, then go
 
-Ask once, with `AskUserQuestion`: the brief and plan as shown against the rejected approach,
-plus any open question. Carry your recommendation in the first option. An answer that changes
-the plan gets the changed lines shown again, not the whole brief.
+Wait for the user only when they asked for the design themselves (`/frame`, "design this
+first", "what are the options") and `AskUserQuestion` is available. Then ask once with it: the
+brief and plan as shown against the rejected approach, plus any open question. Carry your
+recommendation in the first option. An answer that changes the plan gets the changed lines
+shown again, not the whole brief.
+
+Otherwise do not stop. That covers framing you started on your own under `05-understand-first`,
+and any session without `AskUserQuestion` (`claude -p`, the SDK, CI, a subagent), where nobody
+reads a question. End the brief with `Proceeding on the recommendations above` and go on in the
+same turn. An open question with no defensible default is the exception: ask it where you can;
+where you cannot, take the more reversible option, record it under `Assumed`, and go on.
 
 Then start on plan step 1. The plan already names the landing points `20-small-increments`
 asks for.
@@ -116,11 +128,16 @@ next step from there.
 
 ## Rules
 
-- Never write production code in this skill. It ends at an agreed approach and plan.
+- No production code before the brief is shown. Once it is shown and step 4 is settled,
+  implementation follows in the same turn.
+- Never end a turn on the brief unless you are waiting on a question you asked with
+  `AskUserQuestion`. A question written as plain text is not asked; in a session nobody is
+  watching, it ends the work.
 - Never invent a constraint, a requirement or a prior decision. Cite, or leave it out.
 - Never re-open a decision the repo already recorded. Name it as a constraint; if it is the
-  thing blocking a good design, say so as an open question and let the user decide.
+  thing blocking a good design, say so as an open question and let the user decide - or, where
+  nobody can be asked, keep the recorded decision and say so under `Assumed`.
 - Keep the user's framing where it is adequate. Reframing what the user already stated clearly
   is not design work.
-- One screen, one decision, no file unless step 5 applies. The PR description in step 5 is not
-  a file.
+- One screen, one decision (asked, or taken on your recommendation, per step 4), no file
+  unless step 5 applies. The PR description in step 5 is not a file.
