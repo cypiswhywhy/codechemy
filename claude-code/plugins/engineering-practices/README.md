@@ -67,8 +67,9 @@ clone of it gets the plugin with no command at all.
 
 - **05-understand-first.md**: the most expensive defect is a correct implementation of the
   wrong thing, and nothing downstream catches it. Restate the request as an outcome, name the
-  invariant, read one existing example of the same kind of thing, name the two or three ways it
-  can fail, ask only where two readings lead to different work - and run
+  invariant (the domain's rules included), read one existing example of the same kind of
+  thing, name the two or three ways it can fail, ask only where two readings lead to different
+  work - and run
   [`/frame`](skills/frame/SKILL.md) when the change touches a contract, crosses a module
   boundary or is hard to undo.
 - **10-leave-it-smaller.md**: every change is also a maintenance pass over the code it
