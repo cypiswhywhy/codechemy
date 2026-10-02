@@ -4,7 +4,7 @@ When a change alters behaviour and the project has a test harness, work red-gree
 
 - Write the failing test first, from the requirement, and watch it fail for the expected reason.
   A test that passes on its first run has proven nothing.
-- Write the smallest code that turns it green, refactor on green, commit test and code together.
+- Write the optimal code that turns it green, refactor on green, commit test and code together.
 - One behaviour per test, named after the behaviour (`rejects an expired token`); assert on
   outcomes, not internals.
 - A bug fix starts with a test that reproduces the bug and stays as the regression guard.
