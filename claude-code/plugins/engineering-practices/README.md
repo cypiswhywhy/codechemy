@@ -108,8 +108,9 @@ clone of it gets the plugin with no command at all.
 
 ### Hook: `practices` (`hooks/practices.py`)
 
-`SessionStart`. Concatenates `practices/*.md` in name order behind one line saying these are
-standing instructions that override conflicting defaults, and prints them; Claude Code adds
+`SessionStart`. Concatenates `practices/*.md` in name order behind a preamble that ranks them:
+the task's own requirements and the project's documented rules first, then these practices,
+which override Claude Code's conflicting defaults. It prints the result, and Claude Code adds
 stdout to the session's context. Editing a practice takes effect in the next session.
 
 ### Hook: `leave-it-smaller` (`hooks/leave_it_smaller.py`)
