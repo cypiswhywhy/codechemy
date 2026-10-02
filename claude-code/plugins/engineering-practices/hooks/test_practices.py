@@ -38,8 +38,13 @@ class PracticesCase(unittest.TestCase):
         positions = [output.index(p.read_text().strip().splitlines()[0]) for p in PRACTICES]
         self.assertEqual(positions, sorted(positions))
 
-    def test_marks_the_practices_as_binding(self) -> None:
-        self.assertIn("override", run().lower())
+    def test_marks_the_practices_as_overriding_defaults(self) -> None:
+        self.assertIn("override claude code's default behaviour", run().lower())
+
+    def test_ranks_the_task_and_project_rules_above_the_practices(self) -> None:
+        preamble = run().split("\n\n", 1)[0].lower()
+        self.assertIn("the task's own requirements and the project's documented rules come first",
+                      preamble)
 
 
 if __name__ == "__main__":

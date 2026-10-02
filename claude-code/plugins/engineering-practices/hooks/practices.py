@@ -14,9 +14,10 @@ from pathlib import Path
 PRACTICES = Path(__file__).resolve().parent.parent / "practices"
 
 PREAMBLE = (
-    "Engineering practices, from the engineering-practices plugin. Standing instructions for "
-    "this and every session: follow them in all projects, and where they conflict with a "
-    "default behaviour they OVERRIDE it."
+    "Engineering practices, from the engineering-practices plugin, for this and every session. "
+    "The task's own requirements and the project's documented rules come first. Below them, "
+    "these practices override Claude Code's default behaviour where the two conflict: they "
+    "decide how to work, not what to build."
 )
 
 

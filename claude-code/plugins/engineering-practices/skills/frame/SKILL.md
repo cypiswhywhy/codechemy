@@ -58,7 +58,7 @@ One screen. This shape, in this order, and nothing longer:
 ```markdown
 **Problem** - <the outcome someone wants, one line, no solution in it>
 **Assumed** - <what you took as given that the user did not say; "nothing" is an answer>
-**Invariant** - <what is true now and must still be true after>
+**Invariant** - <what is true now and must still be true after, the domain's rules included>
 **Constraints** - <2-4 lines, each citing a file, a decision record, or the user's own words>
 
 **Approach** - <3-6 lines: the shape, the seam it uses, what it touches>
@@ -81,6 +81,9 @@ Rules that keep it honest:
   say what makes it so - that is the constraint, and it belongs in `Constraints`.
 - **The problem line contains no solution.** "Users lose their draft when the tab closes" is a
   problem; "add localStorage persistence" is the approach with the problem hidden inside it.
+- **`Invariant` names the domain's rules, not only the code's.** Where the change models a
+  domain with established rules (money, time zones, units, a protocol), state the rule the
+  approach depends on, and give it a `Can fail by` line.
 - **`Assumed` is the part the user most needs to read.** Anything the request did not say but
   the approach depends on goes there, not into `Problem` or `Constraints`.
 - **Each plan step is a landing point** as `20-small-increments` defines it: merged on its own,
