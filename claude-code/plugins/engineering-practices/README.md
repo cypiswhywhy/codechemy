@@ -90,7 +90,7 @@ clone of it gets the plugin with no command at all.
   [`/apply-all-increments`](skills/apply-all-increments/SKILL.md) skills carry this out for an
   OpenSpec project.
 - **30-test-driven.md**: red-green-refactor whenever a change alters behaviour and the project
-  has a test harness. Failing test first and seen failing, smallest code to green, refactor on
+  has a test harness. Failing test first and seen failing, simplest code to green, refactor on
   green; bug fixes start with a reproducing test; a red test means root-cause the code, and the test
   changes only once the logic under it is shown correct; not
   applicable to docs, config, one-off scripts and declared spikes, and the summary says so.
@@ -103,9 +103,10 @@ clone of it gets the plugin with no command at all.
   none at all where the name and signature already say it; length only for a reason outside the
   code; no change narration, `TODO`s or commented-out code; match the density of the file.
 - **45-write-plainly.md**: what goes to the reader - chat, questions, summaries, PR descriptions,
-  commit bodies - leads with the answer, in short sentences and common words, with the concrete
-  `file:line`, command or number; one topic per message; no preamble, recap, closing offer or
-  empty hedge; the summary items the other practices require stay, one line each.
+  commit bodies - ends with the answer or the question, in short sentences and common words,
+  with the concrete `file:line`, command or number; one topic per message; no preamble, recap,
+  closing offer or empty hedge; the summary items the other practices require stay, one line
+  each.
 
 ### Hook: `practices` (`hooks/practices.py`)
 
