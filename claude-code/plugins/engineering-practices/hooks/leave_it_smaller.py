@@ -8,13 +8,14 @@ Stop: measures the shape of the change about to be handed back (the branch versu
 plus the working tree) and blocks the stop when it fails one of five checks - the change only
 added lines, it is already large, it edits source without touching a test in a repository that
 has tests, a source file grew mostly by comments and docstrings, or the summary does not state
-the diff shape. The nudge is bounded: never while the
-agent is already continuing because of a stop hook, never for a diff it has already nudged on,
-each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in
-all. Otherwise the shape is shown to the user as a one-line system message.
+the diff shape. The nudge is bounded: never while the agent is already continuing because of a
+stop hook, never for a diff it has already nudged on or found at session start, each check at
+most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a one-line system message.
 
-SessionStart: points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
-`## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
+SessionStart: records the shape of the change already in the tree, so a session that changes
+nothing is never asked about it, and points the agent at /maintenance-toolbox when the
+repository's CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint /
+test commands are recorded).
 
 Stdlib only. Never fails the session: any unexpected error is logged and exits 0.
 """
@@ -429,6 +430,10 @@ def summary_line(shape: dict) -> str:
 # ----- per-session state -----------------------------------------------------
 
 
+def session_of(payload: dict) -> str:
+    return str(payload.get("session_id") or "unknown")
+
+
 def state_path(session_id: str) -> Path:
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id) or "unknown"
     return STATE_DIR / f"{safe}.json"
@@ -464,7 +469,7 @@ def run_stop(payload: dict) -> None:
     shape = diff_shape(payload.get("cwd") or os.getcwd())
     if not shape or shape["files"] == 0:
         return
-    session_id = str(payload.get("session_id") or "unknown")
+    session_id = session_of(payload)
     state = load_state(session_id)
     changed = state.get("fingerprint") != shape["fingerprint"]
     add_only, large = assess(shape)
@@ -513,10 +518,17 @@ def run_stop(payload: dict) -> None:
 
 def run_session_start(payload: dict) -> None:
     cwd = payload.get("cwd") or os.getcwd()
-    try:
-        root = Path(git(cwd, "rev-parse", "--show-toplevel").strip())
-    except (GitError, OSError):
+    shape = diff_shape(cwd)
+    if shape is None:
         return
+    # Work already in the tree is not this session's to answer for; resume and compaction
+    # fire SessionStart again, so only the first one sets the baseline.
+    session_id = session_of(payload)
+    state = load_state(session_id)
+    if "fingerprint" not in state:
+        state["fingerprint"] = shape["fingerprint"]
+        save_state(session_id, state)
+    root = Path(shape["root"])
     text = ""
     for candidate in (root / "CLAUDE.md", root / ".claude" / "CLAUDE.md"):
         try:

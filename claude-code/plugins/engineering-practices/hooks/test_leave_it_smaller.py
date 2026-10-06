@@ -93,6 +93,19 @@ class HookCase(unittest.TestCase):
         self.assertNotIn("decision", third)
         self.assertIn("add-only", third["systemMessage"])
 
+    def test_work_left_from_before_the_session_is_silent_until_the_session_changes_it(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(500, "earlier"))
+        self.run_hook("session-start")
+        self.assertEqual(self.run_hook("stop"), {})
+        (self.repo / "a.py").write_text(lines(10) + lines(550, "earlier"))
+        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+
+    def test_a_resumed_or_compacted_session_keeps_its_first_baseline(self) -> None:
+        self.run_hook("session-start")
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        self.run_hook("session-start")
+        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+
     def test_stop_hook_active_never_blocks(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
         out = self.run_hook("stop", stop_hook_active=True)
