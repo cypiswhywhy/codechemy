@@ -123,7 +123,7 @@ untracked files count as new, binaries are ignored) and acts per stop:
 
 | Condition (defaults) | Action |
 |---|---|
-| no repository or no change | silent |
+| no repository, no change, or no change since the session started | silent |
 | the change gained ≥ 40 lines and lost < 10 % of that | **block once** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
 | total change ≥ 400 lines | **block once per session** asking which landing points were named up front, and refusing a retroactive slice by file or layer as a split |
 | source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
@@ -135,7 +135,9 @@ The summary check reads the session transcript for the message the agent is abou
 there is no transcript, or its format is not the one expected, the check passes rather than
 blocking. Bounded by construction: never while the agent is already continuing because of a stop
 hook, never twice for the same diff, each check at most once per session, at most two blocks per
-session in all; after that the smell is still shown to you but the agent is not interrupted. `session-start` tells the agent to offer
+session in all; after that the smell is still shown to you but the agent is not interrupted. `session-start` records the
+shape already in the tree, so a session that changes nothing is not asked about earlier work; once it
+changes anything, the whole pending change is measured again. It also tells the agent to offer
 `/maintenance-toolbox` once when the repository's `CLAUDE.md` has no `## Maintenance toolbox`.
 
 | Variable | Default | Meaning |
