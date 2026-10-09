@@ -111,9 +111,9 @@ working tree.
 
 ## Rules
 
-- Every code decision belongs to `/apply-increment` and every review decision to `/push`. This
-  skill writes no code and triages no review comment; it sequences those two skills and opens
-  only the archive PR itself.
+- Every code decision belongs to `/apply-increment` and every review decision on an increment
+  PR to `/push`; the archive PR gets no review (step 7). This skill writes no code and triages
+  no review comment; it sequences those two skills and opens only the archive PR itself.
 - One question per PR: the merge. Everything else it can find out with `gh`, `git` and
   `openspec`.
 - Never merge, never push to the default branch, never skip `/push`, except for the archive PR,
