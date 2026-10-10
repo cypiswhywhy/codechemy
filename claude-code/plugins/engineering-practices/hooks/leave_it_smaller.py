@@ -481,8 +481,9 @@ def run_stop(payload: dict) -> None:
         and state.get("nudges", 0) < MAX_NUDGES
     )
     reasons = []
-    if can_nudge and add_only:
+    if can_nudge and add_only and not state.get("add_only_nudged"):
         reasons.append(ADD_ONLY_MESSAGE.format(**shape))
+        state["add_only_nudged"] = True
     if can_nudge and large and not state.get("large_nudged"):
         reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
         state["large_nudged"] = True

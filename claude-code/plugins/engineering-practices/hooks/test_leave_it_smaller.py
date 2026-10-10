@@ -76,7 +76,7 @@ class HookCase(unittest.TestCase):
     def test_clean_tree_is_silent(self) -> None:
         self.assertEqual(self.run_hook("stop"), {})
 
-    def test_add_only_growth_blocks_then_dedupes_then_caps(self) -> None:
+    def test_add_only_growth_is_nudged_once_per_session(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
         first = self.run_hook("stop")
         self.assertEqual(first.get("decision"), "block")
@@ -84,14 +84,11 @@ class HookCase(unittest.TestCase):
         self.assertIn("added +50 and removed only -0", first["reason"])
         # Same diff again: already nudged on this exact shape, nothing new to say.
         self.assertEqual(self.run_hook("stop"), {})
-        # Still add-only after more edits: second (and last) nudge.
+        # Still add-only after more edits: the smell is reported, the questions are not re-asked.
         (self.repo / "a.py").write_text(lines(10) + lines(80, "new"))
-        self.assertEqual(self.run_hook("stop").get("decision"), "block")
-        # Cap reached: the smell is still reported, but the stop is no longer blocked.
-        (self.repo / "a.py").write_text(lines(10) + lines(90, "new"))
-        third = self.run_hook("stop")
-        self.assertNotIn("decision", third)
-        self.assertIn("add-only", third["systemMessage"])
+        second = self.run_hook("stop")
+        self.assertNotIn("decision", second)
+        self.assertIn("add-only", second["systemMessage"])
 
     def test_work_left_from_before_the_session_is_silent_until_the_session_changes_it(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(500, "earlier"))
@@ -151,12 +148,18 @@ class HookCase(unittest.TestCase):
         # Still large, but the seam question is asked only once per session.
         (self.repo / "b.py").write_text(lines(520))
         second = self.run_hook("stop")
-        self.assertNotIn("landing points you named", second["reason"])
-        # Nudge cap reached: the shape is reported, not blocked.
-        (self.repo / "b.py").write_text(lines(540))
+        self.assertNotIn("decision", second)
+        self.assertIn("large change", second["systemMessage"])
+
+    def test_blocks_stop_at_the_cap_even_when_a_new_check_fails(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+        (self.repo / "a.py").write_text(lines(10) + lines(500, "new"))
+        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+        (self.repo / "c.py").write_text(lines(30, "# why"))
         third = self.run_hook("stop")
         self.assertNotIn("decision", third)
-        self.assertIn("large change", third["systemMessage"])
+        self.assertIn("systemMessage", third)
 
     def test_feature_branch_is_measured_against_main(self) -> None:
         git(self.repo, "checkout", "-qb", "feature")
