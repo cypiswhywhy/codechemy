@@ -115,6 +115,11 @@ the task's own requirements and the project's documented rules first, then these
 which override Claude Code's conflicting defaults. It prints the result, and Claude Code adds
 stdout to the session's context. Editing a practice takes effect in the next session.
 
+To turn the plugin off for a project that is not code (notes, research), put
+`<!-- engineering-practices: off -->` in its `CLAUDE.md` or `.claude/CLAUDE.md`. Both hooks then
+stay silent there; the skills stay available. The file is read from the git repository root, or
+from the session's directory outside a repository.
+
 ### Hook: `leave-it-smaller` (`hooks/leave_it_smaller.py`)
 
 One script, two events. `stop` measures the whole pending change (branch vs merge-base with

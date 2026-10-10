@@ -194,6 +194,12 @@ class HookCase(unittest.TestCase):
         )
         self.assertEqual((proc.returncode, proc.stdout), (0, ""))
 
+    def test_project_opt_out_marker_is_silent(self) -> None:
+        (self.repo / "CLAUDE.md").write_text("<!-- engineering-practices: off -->\n")
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        self.assertEqual(self.run_hook("stop"), {})
+        self.assertEqual(self.run_hook("session-start"), {})
+
     def test_rename_target_parsing(self) -> None:
         self.assertEqual(leave_it_smaller.rename_target("old.py => new.py"), "new.py")
         self.assertEqual(leave_it_smaller.rename_target("src/{old => new}/x.py"), "src/new/x.py")
@@ -338,6 +344,14 @@ class HookCase(unittest.TestCase):
         (self.repo / ".claude").mkdir()
         (self.repo / ".claude" / "CLAUDE.md").write_text("## Maintenance toolbox\n")
         self.assertEqual(self.run_hook("session-start"), {})
+
+    def test_a_payload_that_is_not_an_object_never_fails_the_hook(self) -> None:
+        for command in ("stop", "session-start"):
+            proc = subprocess.run(
+                [sys.executable, str(HOOK), command], input="[1]", cwd=self.repo,
+                env={**GIT_ENV, "CLAUDE_CONFIG_DIR": str(self.config)}, capture_output=True, text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_unknown_subcommand_exits_2(self) -> None:
         proc = subprocess.run([sys.executable, str(HOOK), "bogus"], input="{}", capture_output=True, text=True)
