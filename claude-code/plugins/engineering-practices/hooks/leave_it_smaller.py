@@ -36,7 +36,7 @@ import time
 import tokenize
 from pathlib import Path, PurePosixPath
 
-from practices import OPT_OUT, project_instructions
+from practices import OPT_OUT, project_instructions, read_payload
 
 
 def _env_number(name: str, default: float) -> float:
@@ -555,13 +555,10 @@ def main(argv: list[str]) -> int:
         return 2
     if os.environ.get("LEAVE_IT_SMALLER_DISABLE"):
         return 0
+    payload = read_payload()
     try:
-        payload = json.load(sys.stdin) if not sys.stdin.isatty() else {}
-    except ValueError:
-        payload = {}
-    if OPT_OUT in project_instructions(payload.get("cwd") or os.getcwd()):
-        return 0
-    try:
+        if OPT_OUT in project_instructions(payload.get("cwd") or os.getcwd()):
+            return 0
         if command == "stop":
             run_stop(payload)
         else:

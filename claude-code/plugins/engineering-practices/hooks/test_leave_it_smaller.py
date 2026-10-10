@@ -345,6 +345,14 @@ class HookCase(unittest.TestCase):
         (self.repo / ".claude" / "CLAUDE.md").write_text("## Maintenance toolbox\n")
         self.assertEqual(self.run_hook("session-start"), {})
 
+    def test_a_payload_that_is_not_an_object_never_fails_the_hook(self) -> None:
+        for command in ("stop", "session-start"):
+            proc = subprocess.run(
+                [sys.executable, str(HOOK), command], input="[1]", cwd=self.repo,
+                env={**GIT_ENV, "CLAUDE_CONFIG_DIR": str(self.config)}, capture_output=True, text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_unknown_subcommand_exits_2(self) -> None:
         proc = subprocess.run([sys.executable, str(HOOK), "bogus"], input="{}", capture_output=True, text=True)
         self.assertEqual(proc.returncode, 2)

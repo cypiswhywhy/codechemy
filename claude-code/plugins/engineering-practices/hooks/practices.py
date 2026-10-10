@@ -31,7 +31,7 @@ def project_instructions(cwd: str) -> str:
     try:
         root = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True, text=True,
-            timeout=10, check=False,
+            timeout=5, check=False,
         ).stdout.strip() or cwd
     except (OSError, subprocess.SubprocessError):
         root = cwd
@@ -44,16 +44,17 @@ def project_instructions(cwd: str) -> str:
     return text
 
 
-def payload_cwd() -> str:
+def read_payload() -> dict:
+    """The hook's JSON payload from stdin; {} when it is absent or not an object."""
     try:
         payload = json.load(sys.stdin) if not sys.stdin.isatty() else {}
     except ValueError:
         payload = {}
-    return payload.get("cwd") or os.getcwd()
+    return payload if isinstance(payload, dict) else {}
 
 
 def main() -> int:
-    if OPT_OUT in project_instructions(payload_cwd()):
+    if OPT_OUT in project_instructions(read_payload().get("cwd") or os.getcwd()):
         return 0
     bodies = [p.read_text().strip() for p in sorted(PRACTICES.glob("*.md"))]
     if not bodies:

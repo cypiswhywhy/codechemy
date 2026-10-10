@@ -61,6 +61,11 @@ class PracticesCase(unittest.TestCase):
             (Path(tmp) / "sub").mkdir()
             self.assertEqual(run(Path(tmp) / "sub"), "")
 
+    def test_a_payload_that_is_not_an_object_still_gets_the_practices(self) -> None:
+        proc = subprocess.run([sys.executable, str(HOOK)], input='"x"', capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(PRACTICES[0].read_text().strip(), proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=0 if "-q" in sys.argv else 1, argv=[a for a in sys.argv if a != "-q"])
