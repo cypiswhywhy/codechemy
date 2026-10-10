@@ -18,9 +18,7 @@ make install-plugin
 
 `make install-plugin` points the `codechemy` marketplace at your clone and installs the plugin
 from it, so the hooks run from your working tree. `make uninstall-plugin` undoes it. Restart
-Claude Code after either. A marketplace name holds one source, so if you installed from GitHub first, run
-`claude plugin marketplace remove codechemy` before switching to your clone.
-<!-- TODO: verify — the Makefile says re-adding an existing name just repoints it. --> Details: [docs/reference/make-targets.md](docs/reference/make-targets.md).
+Claude Code after either. Details: [docs/reference/make-targets.md](docs/reference/make-targets.md).
 
 ## Run tests and checks
 
