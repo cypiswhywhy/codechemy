@@ -4,7 +4,7 @@
 - **Date**: 2026-10-02
 
 ## Context
-Recorded retroactively from commit `bc7fcf0` and `engineering-practices-optimization.md`. The
+Recorded retroactively from commit `bc7fcf0` and the optimization plan it implemented. The
 SessionStart preamble said the practices OVERRIDE every default, which put them ahead of a task's
 firm requirements, such as a documented rule that must win or output that must stay
 byte-identical.
