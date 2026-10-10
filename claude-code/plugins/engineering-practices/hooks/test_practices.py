@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -18,9 +19,9 @@ HOOK = HERE / "practices.py"
 PRACTICES = sorted((HERE.parent / "practices").glob("*.md"))
 
 
-def run() -> str:
+def run(cwd: Path = HERE) -> str:
     proc = subprocess.run(
-        [sys.executable, str(HOOK)], input=json.dumps({"cwd": str(HERE)}),
+        [sys.executable, str(HOOK)], input=json.dumps({"cwd": str(cwd)}),
         capture_output=True, text=True, check=False,
     )
     assert proc.returncode == 0, proc.stderr
@@ -45,6 +46,20 @@ class PracticesCase(unittest.TestCase):
         preamble = run().split("\n\n", 1)[0].lower()
         self.assertIn("the task's own requirements and the project's documented rules come first",
                       preamble)
+
+    def test_a_project_opting_out_gets_no_practices(self) -> None:
+        for claude_md in ("CLAUDE.md", ".claude/CLAUDE.md"):
+            with self.subTest(claude_md), tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / claude_md).parent.mkdir(exist_ok=True)
+                (Path(tmp) / claude_md).write_text("# Notes\n\n<!-- engineering-practices: off -->\n")
+                self.assertEqual(run(Path(tmp)), "")
+
+    def test_the_marker_at_the_repository_root_covers_its_subdirectories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / "CLAUDE.md").write_text("<!-- engineering-practices: off -->\n")
+            (Path(tmp) / "sub").mkdir()
+            self.assertEqual(run(Path(tmp) / "sub"), "")
 
 
 if __name__ == "__main__":

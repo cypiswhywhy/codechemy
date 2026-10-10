@@ -194,6 +194,12 @@ class HookCase(unittest.TestCase):
         )
         self.assertEqual((proc.returncode, proc.stdout), (0, ""))
 
+    def test_project_opt_out_marker_is_silent(self) -> None:
+        (self.repo / "CLAUDE.md").write_text("<!-- engineering-practices: off -->\n")
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        self.assertEqual(self.run_hook("stop"), {})
+        self.assertEqual(self.run_hook("session-start"), {})
+
     def test_rename_target_parsing(self) -> None:
         self.assertEqual(leave_it_smaller.rename_target("old.py => new.py"), "new.py")
         self.assertEqual(leave_it_smaller.rename_target("src/{old => new}/x.py"), "src/new/x.py")

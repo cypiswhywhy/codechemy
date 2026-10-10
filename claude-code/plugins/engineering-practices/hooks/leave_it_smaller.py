@@ -17,6 +17,8 @@ nothing is never asked about it, and points the agent at /maintenance-toolbox wh
 repository's CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint /
 test commands are recorded).
 
+Both are silent in a project whose CLAUDE.md carries practices.OPT_OUT.
+
 Stdlib only. Never fails the session: any unexpected error is logged and exits 0.
 """
 
@@ -33,6 +35,8 @@ import sys
 import time
 import tokenize
 from pathlib import Path, PurePosixPath
+
+from practices import OPT_OUT, project_instructions
 
 
 def _env_number(name: str, default: float) -> float:
@@ -529,13 +533,7 @@ def run_session_start(payload: dict) -> None:
     if "fingerprint" not in state:
         state["fingerprint"] = shape["fingerprint"]
         save_state(session_id, state)
-    root = Path(shape["root"])
-    text = ""
-    for candidate in (root / "CLAUDE.md", root / ".claude" / "CLAUDE.md"):
-        try:
-            text += candidate.read_text(errors="replace")
-        except OSError:
-            pass
+    text = project_instructions(shape["root"])
     if TOOLBOX_HEADING in text or TOOLBOX_OPT_OUT in text:
         return
     print(TOOLBOX_HINT)
@@ -561,6 +559,8 @@ def main(argv: list[str]) -> int:
         payload = json.load(sys.stdin) if not sys.stdin.isatty() else {}
     except ValueError:
         payload = {}
+    if OPT_OUT in project_instructions(payload.get("cwd") or os.getcwd()):
+        return 0
     try:
         if command == "stop":
             run_stop(payload)
