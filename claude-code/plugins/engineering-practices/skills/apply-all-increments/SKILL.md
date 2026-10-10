@@ -9,8 +9,9 @@ description: Drive an OpenSpec change from its current state all the way to main
 This skill is the loop around it, with one increment per session. It walks the user through
 the entire change, from "is this proposal still valid" to "archived"; the user's manual steps
 are merging each PR and starting a fresh session for the next increment. Everything else is
-delegated: the increment to `/apply-increment`, the PR and its review to `/push`, the archive
-to `/opsx:archive`. Nothing is held in the session: ticked tasks are on main, open PRs are on
+delegated, except the archive PR, which this skill opens itself: the increment to
+`/apply-increment`, each increment's PR and its review to `/push`, the archive to
+`/opsx:archive`. Nothing is held in the session: ticked tasks are on main, open PRs are on
 GitHub and merged ones are in the run log, so every run resumes where the last one stopped
 and the final run still reports every increment. One increment per session is deliberate: a
 session that carried eleven increments ran to a million tokens of context, and the sweeps
@@ -75,8 +76,20 @@ working tree.
    `chore/<change>-archive`. Invoke `/opsx:archive <change>` when it is available, since it also
    syncs the delta specs into the main specs; otherwise `openspec archive "<name>"`. Pass its
    questions (spec sync, warnings) through to the user; do not decide them. Commit as
-   `chore(<change>): archive change`, hand off to `/push`, ask for the merge as in step 5, return
-   to main as in step 6.
+   `chore(<change>): archive change`.
+   - Push the branch and open the PR yourself (`git push -u origin HEAD`, `gh pr create`), with
+     no Copilot request and no `/code-review` fallback. An archive PR is a rename plus a verbatim
+     spec copy, so a review has nothing to judge, and the `/code-review` fallback skips
+     `openspec/` anyway.
+   - Run the mechanical checks in place of a review: `openspec validate --specs --strict`
+     passes, each synced main spec's body matches its delta (diff), and
+     `openspec/changes/<name>` is gone. Put the results in the PR body.
+   - If the sync MODIFIED or REMOVED requirements in an existing main spec, say so when asking
+     for the merge, so the user reads that diff. A sync that only ADDS requirements needs no
+     note.
+   - Then ask for the merge as in step 5, worded `PR #n (archive of <change>) passed the
+     mechanical checks. Merge it.` with the MODIFIED or REMOVED note after it if there is one,
+     and return to main as in step 6.
 
 8. **Summary.** Read the run log and take the per-increment lines from it rather than from the
    session, so a compacted run reports as completely as an uninterrupted one. Change name; one
@@ -98,11 +111,13 @@ working tree.
 
 ## Rules
 
-- Every code decision belongs to `/apply-increment` and every review decision to `/push`. This
-  skill writes no code and triages no review comment; it only sequences those two skills.
+- Every code decision belongs to `/apply-increment` and every review decision on an increment
+  PR to `/push`; the archive PR gets no review (step 7). This skill writes no code and triages
+  no review comment; it sequences those two skills and opens only the archive PR itself.
 - One question per PR: the merge. Everything else it can find out with `gh`, `git` and
   `openspec`.
-- Never merge, never push to the default branch, never skip `/push`.
+- Never merge, never push to the default branch, never skip `/push`, except for the archive PR,
+  which skips `/push` (step 7).
 - The archive is its own PR, never bundled into the last increment.
 - Revalidation edits the change's artifacts only, only with the user's agreement, and only
   before the first increment; later drift is `/apply-increment`'s "surface added scope" pause.
