@@ -33,6 +33,7 @@ import subprocess
 import sys
 import time
 import tokenize
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from practices import OPT_OUT, project_instructions, read_payload
@@ -94,6 +95,20 @@ COMMENT_PREFIXES = {
     ".swift": ("//", "/*", "*"), ".php": ("//", "/*", "*", "#"), ".rb": ("#",),
     ".sh": ("#",), ".bash": ("#",), ".zsh": ("#",), ".pl": ("#",), ".r": ("#",),
 }
+# A background command or agent announces itself at the start of its tool result, and is finished
+# once a task notification names its tool use or a TaskStop result names its task.
+BACKGROUND_LAUNCH_RE = re.compile(
+    r"Command running in background with ID: (\w+)|Async agent launched successfully\..*?agentId: (\w+)",
+    re.S,
+)
+TASK_DONE_RE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
+TASK_STOPPED_RE = re.compile(r"stopped task: (\w+)")
+# A task can end without its notification reaching the transcript; past this age it no longer
+# holds the checks back. The longest real wait seen at a stop was 12 minutes.
+BACKGROUND_STALE_SECONDS = 3600
+# A transcript grows for the whole session; only its tail is read.
+MAX_TRANSCRIPT_TAIL_BYTES = 256_000
+
 ADD_ONLY_MESSAGE = (
     "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
     "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
@@ -407,6 +422,74 @@ def diff_shape(root: str, base: str | None, rows: list[Row], baseline: dict) -> 
 # ----- assessment ------------------------------------------------------------
 
 
+def transcript_tail(transcript_path: str | None) -> list[dict]:
+    """The entries at the end of the session transcript; [] when it is absent or unreadable."""
+    if not transcript_path:
+        return []
+    try:
+        with open(transcript_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - MAX_TRANSCRIPT_TAIL_BYTES))
+            raw = fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    entries = []
+    for line in raw.splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def result_text(content: object) -> str:
+    """A tool result's text: the string itself, or its first text block."""
+    if isinstance(content, str):
+        return content
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return str(block.get("text", ""))
+    return ""
+
+
+def entry_time(entry: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(entry["timestamp"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError):
+        return None
+
+
+def background_pending(transcript_path: str | None) -> bool:
+    """Whether a background command or agent started in the transcript's tail has not finished.
+
+    The stop is then a pause, not the hand-back. A transcript in an unfamiliar format reads as
+    nothing pending, so the checks run as they would without this.
+    """
+    pending: dict[str, tuple[str, datetime | None]] = {}  # tool use id -> (task id, launched at)
+    latest = None
+    for entry in transcript_tail(transcript_path):
+        latest = entry_time(entry) or latest
+        if entry.get("type") != "user":
+            continue
+        content = (entry.get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                launched = BACKGROUND_LAUNCH_RE.match(result_text(block.get("content")))
+                if launched:
+                    pending[str(block.get("tool_use_id"))] = (launched[1] or launched[2], entry_time(entry))
+        text = content if isinstance(content, str) else json.dumps(content)
+        for tool_use_id in TASK_DONE_RE.findall(text):
+            pending.pop(tool_use_id, None)
+        stopped = set(TASK_STOPPED_RE.findall(text))
+        pending = {use: task for use, task in pending.items() if task[0] not in stopped}
+    return any(
+        not (at and latest and (latest - at).total_seconds() > BACKGROUND_STALE_SECONDS)
+        for _, at in pending.values()
+    )
+
+
 def assess(shape: dict) -> tuple[bool, bool]:
     """(the change only added, the change is already large)."""
     add_only = (
@@ -463,6 +546,8 @@ def emit(payload: dict) -> None:
 
 
 def run_stop(payload: dict) -> None:
+    if background_pending(payload.get("transcript_path")):
+        return
     change = pending_change(payload.get("cwd") or os.getcwd())
     if change is None:
         return

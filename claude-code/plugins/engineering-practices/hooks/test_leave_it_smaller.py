@@ -329,13 +329,71 @@ class HookCase(unittest.TestCase):
 
     # ----- the transcript -----
 
-    def transcript(self, *texts: str) -> str:
+    def transcript(self, *entries: str | dict) -> str:
+        """A transcript file; a str entry is an assistant message with that text."""
         path = self.tmp / "transcript.jsonl"
         path.write_text("".join(
-            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}) + "\n"
-            for text in texts
+            json.dumps(
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": entry}]}}
+                if isinstance(entry, str) else entry
+            ) + "\n"
+            for entry in entries
         ))
         return str(path)
+
+    @staticmethod
+    def launch(tool_use_id: str, result: str | list) -> list[dict]:
+        return [
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {}}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": tool_use_id, "content": result}]}},
+        ]
+
+    @staticmethod
+    def user(content: str | list) -> dict:
+        return {"type": "user", "message": {"content": content}}
+
+    def test_background_work_still_running_holds_the_checks_until_it_reports(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        running = self.launch("toolu_1", "Command running in background with ID: b1x. Output is being written to: /t")
+        self.assertEqual(self.run_hook("stop", transcript_path=self.transcript(*running)), {})
+        done = self.user(
+            "<task-notification>\n<task-id>b1x</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+            "<status>completed</status>\n</task-notification>"
+        )
+        out = self.run_hook("stop", transcript_path=self.transcript(*running, done))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_an_async_agent_holds_the_checks_until_it_is_stopped(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        running = self.launch("toolu_2", [{"type": "text", "text": "Async agent launched successfully.\nagentId: a62f (internal)"}])
+        self.assertEqual(self.run_hook("stop", transcript_path=self.transcript(*running)), {})
+        stopped = self.user([{"type": "tool_result", "tool_use_id": "toolu_3",
+                              "content": '{"message":"Successfully stopped task: a62f (review)"}'}])
+        out = self.run_hook("stop", transcript_path=self.transcript(*running, stopped))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_a_background_task_silent_for_an_hour_no_longer_holds_the_checks(self) -> None:
+        # A task can end without a notification ever reaching the transcript.
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        launched, result = self.launch("toolu_4", "Command running in background with ID: b4. Output: /t")
+        result["timestamp"] = "2026-10-12T08:00:00.000Z"
+        later = {**self.user("next prompt"), "timestamp": "2026-10-12T09:01:00.000Z"}
+        out = self.run_hook("stop", transcript_path=self.transcript(launched, result, later))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_a_tool_result_that_quotes_a_launch_line_does_not_hold_the_checks(self) -> None:
+        # Reading an old transcript or log prints these lines without starting anything.
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        quoted = self.launch("toolu_5", "grep hit: Command running in background with ID: b5. Output: /t")
+        out = self.run_hook("stop", transcript_path=self.transcript(*quoted))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_an_unreadable_transcript_does_not_hold_the_checks(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
+        self.assertEqual(out.get("decision"), "block")
 
     def test_a_summary_without_the_diff_shape_does_not_block(self) -> None:
         # The shape reaches the user as the hook's own systemMessage.
