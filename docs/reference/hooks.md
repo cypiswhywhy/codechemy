@@ -28,7 +28,7 @@ as the session's. It acts per stop:
 |---|---|
 | no repository, or no change by this session | silent |
 | a background command or agent the session started has not reported back (for up to an hour) | silent: the stop is a pause, not the hand-back, so the checks wait for the next stop |
-| the session gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
+| the session gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched. When no code changed (only docs, specs or config), the first two only, asked of text: does it repeat what the repository already says, does it replace a section, page, spec or task still there. Either way, nothing to remove is a one-line answer |
 | source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
 | a source file grew ≥ 20 lines, ≥ 40 % of them comments or docstrings, and 15 points past the file's own density | **block once per session** naming the files and asking for the pass "Say less in the code" describes: delete comments that narrate or restate, cut docstrings to the contract |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |

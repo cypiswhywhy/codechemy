@@ -103,6 +103,22 @@ class HookCase(unittest.TestCase):
         self.run_hook("session-start")
         self.assertEqual(self.run_hook("stop").get("decision"), "block")
 
+    def test_add_only_asks_for_one_line_when_nothing_can_go(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        reason = self.run_hook("stop")["reason"]
+        self.assertIn("dead code", reason)
+        self.assertIn("If nothing can go, say so in one line.", reason)
+
+    def test_a_docs_only_addition_is_asked_only_about_repetition_and_replaced_text(self) -> None:
+        (self.repo / "README.md").write_text(lines(60, "prose"))
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "spec.md").write_text(lines(30, "requirement"))
+        reason = self.run_hook("stop")["reason"]
+        self.assertIn("repeat something the repository already has", reason)
+        self.assertIn("older section, page, spec or task", reason)
+        self.assertNotIn("dead code", reason)
+        self.assertIn("If nothing can go, say so in one line.", reason)
+
     def test_a_session_on_a_branch_with_earlier_work_is_measured_on_its_own_lines(self) -> None:
         git(self.repo, "checkout", "-qb", "feature")
         (self.repo / "a.py").write_text(lines(10) + lines(300, "earlier"))

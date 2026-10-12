@@ -109,10 +109,11 @@ BACKGROUND_STALE_SECONDS = 3600
 # A transcript grows for the whole session; only its tail is read.
 MAX_TRANSCRIPT_TAIL_BYTES = 256_000
 
-ADD_ONLY_MESSAGE = (
-    "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
-    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
-    "and answer these three, in your summary:\n"
+ADD_ONLY_HEADER = (
+    "This session added +{added} and removed only -{deleted}, across {existing_files} existing "
+    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote:\n"
+)
+ADD_ONLY_MESSAGE = ADD_ONLY_HEADER + (
     "1. Does any of it duplicate something the repository already has? Grep for the concept "
     "rather than the name; where a second caller now needs what a first one had, generalise "
     "the existing code and use it in both ('Reuse before adding').\n"
@@ -120,7 +121,15 @@ ADD_ONLY_MESSAGE = (
     "3. Is there dead code, an unused import or parameter, defensive code the task did not "
     "need, or a comment or docstring that only restates the code, in what you touched?\n"
     "Prove each removal first (the project's Maintenance toolbox, then a caller grep). If "
-    "nothing can go, say which of the three you checked, with the diff shape."
+    "nothing can go, say so in one line."
+)
+# A change confined to docs, specs and config has no dead code to look for.
+DOCS_ADD_ONLY_MESSAGE = ADD_ONLY_HEADER + (
+    "1. Does any of it repeat something the repository already has? Grep for the concept "
+    "rather than the name, and point to the one place that says it instead of saying it again.\n"
+    "2. Does it replace text still in the tree, such as an older section, page, spec or task? "
+    "Delete the old one.\n"
+    "Grep for what links to anything you remove. If nothing can go, say so in one line."
 )
 TESTS_MESSAGE = (
     "This change edits {source_files} source file(s) and no test changed with it, in a "
@@ -223,13 +232,16 @@ def is_test_path(path: str) -> bool:
     return name.startswith(TEST_NAME_PREFIXES) or stem.endswith(TEST_STEM_SUFFIXES)
 
 
-def is_source_path(path: str) -> bool:
-    """Whether a change to this path can alter behaviour, so a test should move with it."""
-    if is_test_path(path):
-        return False
+def holds_code(path: str) -> bool:
+    """Whether the path is code (a test included), rather than docs, config or data."""
     name = PurePosixPath(path).name
     suffix = name[name.rindex(".") :] if "." in name[1:] else ""
     return suffix not in NON_SOURCE_SUFFIXES
+
+
+def is_source_path(path: str) -> bool:
+    """Whether a change to this path can alter behaviour, so a test should move with it."""
+    return holds_code(path) and not is_test_path(path)
 
 
 def prose_lines(path: str, text: str) -> int:
@@ -416,6 +428,7 @@ def diff_shape(root: str, base: str | None, rows: list[Row], baseline: dict) -> 
         "root": root,
         "source_files": len(changed_source),
         "test_files": len(changed_tests),
+        "code_files": sum(1 for r in rows if holds_code(r[0])),
     }
 
 
@@ -577,7 +590,8 @@ def run_stop(payload: dict) -> None:
     )
     reasons = []
     if can_nudge and add_only and not state.get("add_only_nudged"):
-        reasons.append(ADD_ONLY_MESSAGE.format(**shape))
+        message = ADD_ONLY_MESSAGE if shape["code_files"] else DOCS_ADD_ONLY_MESSAGE
+        reasons.append(message.format(**shape))
         state["add_only_nudged"] = True
     if (
         can_nudge
