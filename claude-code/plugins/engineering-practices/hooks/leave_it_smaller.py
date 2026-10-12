@@ -514,7 +514,7 @@ def assess(shape: dict) -> tuple[bool, bool]:
 
 def summary_line(shape: dict) -> str:
     return (
-        "leave-it-smaller: +{added} / -{deleted} across {files} file(s) "
+        "leave-it-smaller: this session +{added} / -{deleted} across {files} file(s) "
         "({existing_files} existing: +{existing_added} / -{existing_deleted}; "
         "{new_files} new)"
     ).format(**shape)

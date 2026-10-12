@@ -162,7 +162,7 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))  # -8 / +45
         out = self.run_hook("stop")
         self.assertNotIn("decision", out)
-        self.assertIn("+45 / -8", out["systemMessage"])
+        self.assertTrue(out["systemMessage"].startswith("leave-it-smaller: this session +45 / -8"))
         self.assertNotIn("add-only", out["systemMessage"])
 
     def test_small_additions_are_not_growth(self) -> None:

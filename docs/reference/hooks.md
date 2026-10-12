@@ -31,7 +31,7 @@ as the session's. It acts per stop:
 | the session gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched. When no code changed (only docs, specs or config), the first two only, asked of text: does it repeat what the repository already says, does it replace a section, page, spec or task still there. Either way, nothing to remove is a one-line answer |
 | source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
 | a source file grew ≥ 20 lines, ≥ 40 % of them comments or docstrings, and 15 points past the file's own density | **block once per session** naming the files and asking for the pass "Say less in the code" describes: delete comments that narrate or restate, cut docstrings to the contract |
-| otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |
+| otherwise, when the shape changed since the last stop | one-line `systemMessage` with `this session +N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |
 
 The change's size and whether the summary states `+N / -M` are shown, not asked: questions about
 them led to explanations rather than changes ([ADR 0008](../internals/adrs/0008-block-only-on-checks-that-change-the-code.md)).
