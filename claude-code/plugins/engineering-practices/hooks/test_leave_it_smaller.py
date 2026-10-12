@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for leave_it_smaller.py. Run: python3 test_hook.py
+"""Tests for leave_it_smaller.py. Run: python3 test_leave_it_smaller.py
 
 Each test builds a throwaway git repository and a throwaway CLAUDE_CONFIG_DIR, then drives
 the hook exactly as Claude Code does: a JSON payload on stdin, a subcommand argument.
@@ -103,6 +103,55 @@ class HookCase(unittest.TestCase):
         self.run_hook("session-start")
         self.assertEqual(self.run_hook("stop").get("decision"), "block")
 
+    def test_add_only_asks_for_one_line_when_nothing_can_go(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        reason = self.run_hook("stop")["reason"]
+        self.assertIn("dead code", reason)
+        self.assertIn("If nothing can go, say so in one line.", reason)
+
+    def test_a_docs_only_addition_is_asked_only_about_repetition_and_replaced_text(self) -> None:
+        (self.repo / "README.md").write_text(lines(60, "prose"))
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "spec.md").write_text(lines(30, "requirement"))
+        reason = self.run_hook("stop")["reason"]
+        self.assertIn("repeat something the repository already has", reason)
+        self.assertIn("older section, page, spec or task", reason)
+        self.assertNotIn("dead code", reason)
+        self.assertIn("If nothing can go, say so in one line.", reason)
+
+    def test_a_session_on_a_branch_with_earlier_work_is_measured_on_its_own_lines(self) -> None:
+        git(self.repo, "checkout", "-qb", "feature")
+        (self.repo / "a.py").write_text(lines(10) + lines(300, "earlier"))
+        git(self.repo, "commit", "-qam", "earlier session")
+        self.run_hook("session-start")
+        (self.repo / "a.py").write_text(lines(10) + lines(310, "earlier"))
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("+10 / -0", out["systemMessage"])
+
+    def test_undoing_earlier_work_counts_as_removed(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(500, "earlier"))
+        self.run_hook("session-start")
+        git(self.repo, "checkout", "a.py")
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("+0 / -500", out["systemMessage"])
+
+    def test_pushing_the_default_branch_starts_a_new_baseline(self) -> None:
+        remote = self.tmp / "remote.git"
+        git(self.repo, "init", "-q", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-qu", "origin", "main")
+        (self.repo / "a.py").write_text(lines(10) + lines(100, "earlier"))
+        git(self.repo, "commit", "-qam", "unpushed before the session")
+        self.run_hook("session-start")
+        git(self.repo, "push", "-q")
+        self.assertEqual(self.run_hook("stop"), {})
+        (self.repo / "a.py").write_text(lines(10) + lines(150, "earlier"))
+        out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("+50 / -0", out["reason"])
+
     def test_stop_hook_active_never_blocks(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
         out = self.run_hook("stop", stop_hook_active=True)
@@ -113,7 +162,7 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))  # -8 / +45
         out = self.run_hook("stop")
         self.assertNotIn("decision", out)
-        self.assertIn("+45 / -8", out["systemMessage"])
+        self.assertTrue(out["systemMessage"].startswith("leave-it-smaller: this session +45 / -8"))
         self.assertNotIn("add-only", out["systemMessage"])
 
     def test_small_additions_are_not_growth(self) -> None:
@@ -139,23 +188,21 @@ class HookCase(unittest.TestCase):
         self.assertNotIn("add-only", out["systemMessage"])
         self.assertIn("+200 / -100", out["systemMessage"])
 
-    def test_large_change_nudges_once(self) -> None:
-        (self.repo / "b.py").write_text(lines(500))
-        first = self.run_hook("stop")
-        self.assertEqual(first.get("decision"), "block")
-        self.assertIn("already 500 lines", first["reason"])
-        self.assertIn("landing points you named", first["reason"])
-        # Still large, but the seam question is asked only once per session.
-        (self.repo / "b.py").write_text(lines(520))
-        second = self.run_hook("stop")
-        self.assertNotIn("decision", second)
-        self.assertIn("large change", second["systemMessage"])
+    def test_a_large_change_is_flagged_without_blocking(self) -> None:
+        (self.repo / "b.py").write_text(lines(100))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "b")
+        (self.repo / "b.py").write_text(lines(400, "other"))  # -100 / +400: large, not add-only
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("large change", out["systemMessage"])
 
     def test_blocks_stop_at_the_cap_even_when_a_new_check_fails(self) -> None:
-        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
-        self.assertEqual(self.run_hook("stop").get("decision"), "block")
-        (self.repo / "a.py").write_text(lines(10) + lines(500, "new"))
-        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        self.assertIn("no test changed with it", self.run_hook("stop")["reason"])
+        (self.repo / "a.py").write_text(lines(2) + lines(95, "other"))
+        self.assertIn("removed only", self.run_hook("stop")["reason"])
         (self.repo / "c.py").write_text(lines(30, "# why"))
         third = self.run_hook("stop")
         self.assertNotIn("decision", third)
@@ -283,51 +330,93 @@ class HookCase(unittest.TestCase):
         out = self.run_hook("stop")
         self.assertIn("c.py: +25 lines, 23 of them comments or docstrings", out["reason"])
 
+    def test_comments_written_before_the_session_are_not_its_prose(self) -> None:
+        (self.repo / "c.py").write_text(self.commented(code=10, prose=0))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "c")
+        (self.repo / "c.py").write_text(self.commented(code=10, prose=30))
+        self.run_hook("session-start")
+        (self.repo / "c.py").write_text(self.commented(code=35, prose=30))
+        self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
+
     def test_small_growth_is_not_measured_for_prose(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + self.commented(code=0, prose=15))
         self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
 
-    # ----- the summary-shape check -----
+    # ----- the transcript -----
 
-    def transcript(self, *texts: str) -> str:
+    def transcript(self, *entries: str | dict) -> str:
+        """A transcript file; a str entry is an assistant message with that text."""
         path = self.tmp / "transcript.jsonl"
         path.write_text("".join(
-            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}) + "\n"
-            for text in texts
+            json.dumps(
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": entry}]}}
+                if isinstance(entry, str) else entry
+            ) + "\n"
+            for entry in entries
         ))
         return str(path)
 
-    def test_summary_without_the_diff_shape_is_nudged(self) -> None:
+    @staticmethod
+    def launch(tool_use_id: str, result: str | list) -> list[dict]:
+        return [
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": tool_use_id, "name": "Bash", "input": {}}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": tool_use_id, "content": result}]}},
+        ]
+
+    @staticmethod
+    def user(content: str | list) -> dict:
+        return {"type": "user", "message": {"content": content}}
+
+    def test_background_work_still_running_holds_the_checks_until_it_reports(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        running = self.launch("toolu_1", "Command running in background with ID: b1x. Output is being written to: /t")
+        self.assertEqual(self.run_hook("stop", transcript_path=self.transcript(*running)), {})
+        done = self.user(
+            "<task-notification>\n<task-id>b1x</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+            "<status>completed</status>\n</task-notification>"
+        )
+        out = self.run_hook("stop", transcript_path=self.transcript(*running, done))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_an_async_agent_holds_the_checks_until_it_is_stopped(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        running = self.launch("toolu_2", [{"type": "text", "text": "Async agent launched successfully.\nagentId: a62f (internal)"}])
+        self.assertEqual(self.run_hook("stop", transcript_path=self.transcript(*running)), {})
+        stopped = self.user([{"type": "tool_result", "tool_use_id": "toolu_3",
+                              "content": '{"message":"Successfully stopped task: a62f (review)"}'}])
+        out = self.run_hook("stop", transcript_path=self.transcript(*running, stopped))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_a_background_task_silent_for_an_hour_no_longer_holds_the_checks(self) -> None:
+        # A task can end without a notification ever reaching the transcript.
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        launched, result = self.launch("toolu_4", "Command running in background with ID: b4. Output: /t")
+        result["timestamp"] = "2026-10-12T08:00:00.000Z"
+        later = {**self.user("next prompt"), "timestamp": "2026-10-12T09:01:00.000Z"}
+        out = self.run_hook("stop", transcript_path=self.transcript(launched, result, later))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_a_tool_result_that_quotes_a_launch_line_does_not_hold_the_checks(self) -> None:
+        # Reading an old transcript or log prints these lines without starting anything.
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        quoted = self.launch("toolu_5", "grep hit: Command running in background with ID: b5. Output: /t")
+        out = self.run_hook("stop", transcript_path=self.transcript(*quoted))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_an_unreadable_transcript_does_not_hold_the_checks(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
+        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
+        self.assertEqual(out.get("decision"), "block")
+
+    def test_a_summary_without_the_diff_shape_does_not_block(self) -> None:
+        # The shape reaches the user as the hook's own systemMessage.
         (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
         out = self.run_hook("stop", transcript_path=self.transcript("Done, the parser handles it now."))
-        self.assertEqual(out.get("decision"), "block")
-        self.assertIn("diff shape", out["reason"])
-
-    def test_summary_with_the_diff_shape_passes(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        out = self.run_hook("stop", transcript_path=self.transcript("Done. +45 / -8 across 1 file."))
         self.assertNotIn("decision", out)
-
-    def test_a_typographic_minus_still_counts_as_the_diff_shape(self) -> None:
-        # Markdown summaries routinely carry U+2212 or an en dash where the hyphen was typed.
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        for n, dash in enumerate(("\u2212", "\u2013", "\u2014")):
-            with self.subTest(dash=dash):
-                # A fresh session each time: the check fires once per session, which would
-                # otherwise let the second and third dashes pass without being tested.
-                path = self.transcript(f"Done. +597 / {dash}151 across 25 files.")
-                out = self.run_hook("stop", transcript_path=path, session_id=f"dash{n}")
-                self.assertNotIn("decision", out)
-
-    def test_only_the_last_message_counts(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        path = self.transcript("+45 / -8 across 1 file.", "Actually, one more thing.")
-        self.assertEqual(self.run_hook("stop", transcript_path=path).get("decision"), "block")
-
-    def test_an_unreadable_transcript_is_silent(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
-        self.assertNotIn("decision", out)
+        self.assertIn("+45 / -8", out["systemMessage"])
 
     # ----- session-start -----
 

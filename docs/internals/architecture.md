@@ -43,7 +43,7 @@ sequenceDiagram
     CC->>PR: SessionStart (JSON payload on stdin)
     PR-->>CC: practices text, unless the project opts out
     CC->>LS: SessionStart: session-start
-    LS-->>CC: records the tree's starting shape; toolbox hint
+    LS-->>CC: records what is already pending; toolbox hint
     A->>CC: works, then tries to stop
     CC->>LS: Stop: stop
     alt a check fails and the session has nudges left
@@ -54,8 +54,9 @@ sequenceDiagram
     end
 ```
 
-The per-session state (starting fingerprint, which checks have fired, how many blocks) is a
-JSON file under `~/.claude/leave-it-smaller/sessions/`, pruned after seven days. What the Stop
+The per-session state (the base and per-file counts at session start, the last shape seen, which
+checks have fired, how many blocks) is a JSON file under `~/.claude/leave-it-smaller/sessions/`,
+pruned after seven days. What the Stop
 hook checks, and its settings: [../reference/hooks.md](../reference/hooks.md).
 
 ## Why it is built this way

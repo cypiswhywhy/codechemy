@@ -4,18 +4,19 @@
     python3 leave_it_smaller.py stop            # Stop hook
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
-Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and blocks the stop when it fails one of five checks - the change only
-added lines, it is already large, it edits source without touching a test in a repository that
-has tests, a source file grew mostly by comments and docstrings, or the summary does not state
-the diff shape. The nudge is bounded: never while the agent is already continuing because of a
-stop hook, never for a diff it has already nudged on or found at session start, each check at
-most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a one-line system message.
+Stop: measures what this session changed (the branch versus its base, plus the working tree,
+less what was already pending at session start) and blocks the stop when it fails one of three
+checks - the session only added lines, it edited source without touching a test in a repository
+that has tests, or a source file grew mostly by comments and docstrings. The nudge is bounded:
+never while the agent is already continuing because of a stop hook or waiting on background work
+it started, never twice for the same diff, each check at most once per session, and at most
+LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a
+one-line system message.
 
-SessionStart: records the shape of the change already in the tree, so a session that changes
-nothing is never asked about it, and points the agent at /maintenance-toolbox when the
-repository's CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint /
-test commands are recorded).
+SessionStart: records what is already pending, so a session is asked about its own changes
+rather than earlier work, and points the agent at /maintenance-toolbox when the repository's
+CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint / test commands
+are recorded).
 
 Both are silent in a project whose CLAUDE.md carries practices.OPT_OUT.
 
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import time
 import tokenize
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from practices import OPT_OUT, project_instructions, read_payload
@@ -50,7 +52,7 @@ def _env_number(name: str, default: float) -> float:
 # that count reads as "add-only", whether the lines landed in existing files or new ones.
 MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
 MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
-# Total changed lines from which to look for a separately shippable increment.
+# Total changed lines from which the reported shape carries "large change".
 LARGE = int(_env_number("LEAVE_IT_SMALLER_LARGE", 400))
 # Upper bound on blocked stops per session.
 MAX_NUDGES = int(_env_number("LEAVE_IT_SMALLER_MAX_NUDGES", 2))
@@ -95,17 +97,25 @@ COMMENT_PREFIXES = {
     ".swift": ("//", "/*", "*"), ".php": ("//", "/*", "*", "#"), ".rb": ("#",),
     ".sh": ("#",), ".bash": ("#",), ".zsh": ("#",), ".pl": ("#",), ".r": ("#",),
 }
-# `+45 / -8`, `+45/-8`, `+1,024 / -20`: the diff shape every summary has to end with.
-# The minus accepts the typographic dashes a Markdown summary is routinely written with,
-# or the check rejects summaries that do state the shape.
-DIFF_SHAPE_RE = re.compile(r"\+\s?[\d,]+\s*/\s*[-\u2010-\u2015\u2212]\s?[\d,]+")
-# A transcript grows for the whole session; only its tail can hold the last message.
+# A background command or agent announces itself at the start of its tool result, and is finished
+# once a task notification names its tool use or a TaskStop result names its task.
+BACKGROUND_LAUNCH_RE = re.compile(
+    r"Command running in background with ID: (\w+)|Async agent launched successfully\..*?agentId: (\w+)",
+    re.S,
+)
+TASK_DONE_RE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
+TASK_STOPPED_RE = re.compile(r"stopped task: (\w+)")
+# A task can end without its notification reaching the transcript; past this age it no longer
+# holds the checks back. The longest real wait seen at a stop was 12 minutes.
+BACKGROUND_STALE_SECONDS = 3600
+# A transcript grows for the whole session; only its tail is read.
 MAX_TRANSCRIPT_TAIL_BYTES = 256_000
 
-ADD_ONLY_MESSAGE = (
-    "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
-    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
-    "and answer these three, in your summary:\n"
+ADD_ONLY_HEADER = (
+    "This session added +{added} and removed only -{deleted}, across {existing_files} existing "
+    "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote:\n"
+)
+ADD_ONLY_MESSAGE = ADD_ONLY_HEADER + (
     "1. Does any of it duplicate something the repository already has? Grep for the concept "
     "rather than the name; where a second caller now needs what a first one had, generalise "
     "the existing code and use it in both ('Reuse before adding').\n"
@@ -113,16 +123,15 @@ ADD_ONLY_MESSAGE = (
     "3. Is there dead code, an unused import or parameter, defensive code the task did not "
     "need, or a comment or docstring that only restates the code, in what you touched?\n"
     "Prove each removal first (the project's Maintenance toolbox, then a caller grep). If "
-    "nothing can go, say which of the three you checked, with the diff shape."
+    "nothing can go, say so in one line."
 )
-LARGE_MESSAGE = (
-    "This change is already {total} lines. Say in your summary which landing points you named "
-    "before you started, and put each through the test: merged on its own and stopped there, is "
-    "anyone better off, with main still green? One piece of value lands whole - size alone is "
-    "not a reason to split it, and slicing a finished diff by file or by layer is not a split. "
-    "If a complete, separately useful piece really is in here, land it as its own commit or PR "
-    "first and say how the rest follows. If you named no seams up front, say so, and name them "
-    "now for the work that is left."
+# A change confined to docs, specs and config has no dead code to look for.
+DOCS_ADD_ONLY_MESSAGE = ADD_ONLY_HEADER + (
+    "1. Does any of it repeat something the repository already has? Grep for the concept "
+    "rather than the name, and point to the one place that says it instead of saying it again.\n"
+    "2. Does it replace text still in the tree, such as an older section, page, spec or task? "
+    "Delete the old one.\n"
+    "Grep for what links to anything you remove. If nothing can go, say so in one line."
 )
 TESTS_MESSAGE = (
     "This change edits {source_files} source file(s) and no test changed with it, in a "
@@ -140,11 +149,6 @@ PROSE_MESSAGE = (
     "the review that shaped it, restates the line under it, or explains a line you could "
     "rename or split instead; cut each docstring to the contract and the surprise; keep only "
     "the reasons that live outside the code. Say what you removed, with the diff shape."
-)
-SUMMARY_MESSAGE = (
-    "Your summary does not state the diff shape. End it with `+N / -M` and the files touched, "
-    "together with the tests you ran and their result. Zero removals in a change to existing "
-    "code is a smell - say why when that is the case."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
@@ -188,7 +192,7 @@ def merge_base(cwd: str | Path, a: str, b: str) -> str | None:
 
 
 def base_ref(root: str) -> str | None:
-    """The commit the change is measured against; None for a repository with no commits.
+    """The commit (a full hash) the change is measured against; None with no commits yet.
 
     On a feature branch that is the merge-base with the default branch, so the whole
     branch counts (the PR shape). On the default branch it is the merge-base with the
@@ -196,16 +200,17 @@ def base_ref(root: str) -> str | None:
     """
     if not ref_exists(root, "HEAD"):
         return None
+    head = git(root, "rev-parse", "HEAD").strip()
     branch = git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
     default = next((c for c in DEFAULT_BRANCH_CANDIDATES if ref_exists(root, c)), None)
     if default == "origin/HEAD":
         default = git(root, "rev-parse", "--abbrev-ref", "origin/HEAD").strip()
     default_short = default.split("/", 1)[1] if default and default.startswith("origin/") else default
     if branch != "HEAD" and default and default_short != branch:
-        return merge_base(root, "HEAD", default) or "HEAD"
+        return merge_base(root, "HEAD", default) or head
     if ref_exists(root, "@{upstream}"):
-        return merge_base(root, "HEAD", "@{upstream}") or "HEAD"
-    return "HEAD"
+        return merge_base(root, "HEAD", "@{upstream}") or head
+    return head
 
 
 def rename_target(numstat_path: str) -> str:
@@ -229,13 +234,16 @@ def is_test_path(path: str) -> bool:
     return name.startswith(TEST_NAME_PREFIXES) or stem.endswith(TEST_STEM_SUFFIXES)
 
 
-def is_source_path(path: str) -> bool:
-    """Whether a change to this path can alter behaviour, so a test should move with it."""
-    if is_test_path(path):
-        return False
+def holds_code(path: str) -> bool:
+    """Whether the path is code (a test included), rather than docs, config or data."""
     name = PurePosixPath(path).name
     suffix = name[name.rindex(".") :] if "." in name[1:] else ""
     return suffix not in NON_SOURCE_SUFFIXES
+
+
+def is_source_path(path: str) -> bool:
+    """Whether a change to this path can alter behaviour, so a test should move with it."""
+    return holds_code(path) and not is_test_path(path)
 
 
 def prose_lines(path: str, text: str) -> int:
@@ -265,35 +273,51 @@ def prose_lines(path: str, text: str) -> int:
     return sum(1 for line in text.splitlines() if line.lstrip().startswith(prefixes))
 
 
-def prose_heavy_files(root: str, base: str | None, paths: list[str]) -> list[str]:
+def is_prose_measured(path: str) -> bool:
+    return is_source_path(path) and PurePosixPath(path).suffix.lower() in {".py", *COMMENT_PREFIXES}
+
+
+def file_counts(root: str, path: str) -> list[int] | None:
+    """[lines, prose lines] of the working copy, for a file the prose check reads; else None."""
+    if not is_prose_measured(path):
+        return None
+    try:
+        text = (Path(root) / path).read_text(errors="replace")
+    except OSError:
+        return None
+    return [text.count("\n"), prose_lines(path, text)]
+
+
+def prose_heavy_files(root: str, base: str | None, paths: list[str], baseline: dict) -> list[str]:
     """One line per source file whose growth was mostly comments and docstrings.
 
     A file counts when it grew by at least PROSE_MIN_ADDED lines, at least PROSE_SHARE of that
     growth is prose, and that share exceeds the file's own density before the change by
     PROSE_GAP - the practice is to match the density of the file you are in, so a file that
-    was already half prose is not asked to change.
+    was already half prose is not asked to change. "Before" is the file at session start when
+    the baseline recorded it, else its version at ``base``.
     """
     rows = []
     for path in paths:
-        if not is_source_path(path) or PurePosixPath(path).suffix.lower() not in {".py", *COMMENT_PREFIXES}:
+        after = file_counts(root, path)
+        if after is None:
             continue
-        try:
-            after = (Path(root) / path).read_text(errors="replace")
-        except OSError:
-            continue
-        before = ""
-        if base is not None:
-            try:
-                before = git(root, "show", f"{base}:{path}")
-            except GitError:
-                pass
-        grown = after.count("\n") - before.count("\n")
+        before = (baseline.get(path) or [0, 0, None, None])[2:]
+        if before[0] is None:
+            text = ""
+            if base is not None:
+                try:
+                    text = git(root, "show", f"{base}:{path}")
+                except GitError:
+                    pass
+            before = [text.count("\n"), prose_lines(path, text)]
+        before_lines, before_prose = before
+        grown = after[0] - before_lines
         if grown < PROSE_MIN_ADDED:
             continue
-        prose_grown = prose_lines(path, after) - prose_lines(path, before)
+        prose_grown = after[1] - before_prose
         share = prose_grown / grown
-        before_lines = before.count("\n")
-        density = prose_lines(path, before) / before_lines if before_lines else 0.0
+        density = before_prose / before_lines if before_lines else 0.0
         if share >= PROSE_SHARE and share >= density + PROSE_GAP:
             rows.append(
                 f"- {path}: +{grown} lines, {prose_grown} of them comments or docstrings "
@@ -326,13 +350,16 @@ def count_lines(path: Path) -> int | None:
     return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
-def diff_shape(cwd: str) -> dict | None:
-    """Per-file additions/deletions of the pending change, or None outside a repository."""
+Row = tuple[str, int, int, bool]  # (path, added, deleted, is_new)
+
+
+def pending_change(cwd: str) -> tuple[str, str | None, list[Row]] | None:
+    """(repository root, base commit, per-file rows) of the pending change; None outside a repository."""
     try:
         root = git(cwd, "rev-parse", "--show-toplevel").strip()
     except (GitError, OSError):
         return None
-    rows: list[tuple[str, int, int, bool]] = []  # (path, added, deleted, is_new)
+    rows: list[Row] = []
     base = base_ref(root)
     if base is not None:
         status: dict[str, str] = {}
@@ -351,9 +378,40 @@ def diff_shape(cwd: str) -> dict | None:
         lines = count_lines(Path(root) / path)
         if lines is not None:
             rows.append((path, lines, 0, True))
+    return root, base, rows
 
+
+def baseline_of(root: str, rows: list[Row]) -> dict:
+    """What was already pending, per path: [added, deleted, lines, prose lines]."""
+    return {
+        path: [added, deleted, *(file_counts(root, path) or [None, None])]
+        for path, added, deleted, _ in rows
+    }
+
+
+def session_rows(rows: list[Row], baseline: dict) -> list[Row]:
+    """The rows less what was pending at session start, per file.
+
+    Measured per file as the change in its counts, so lines a session adds and removes within
+    one file net out. Undoing earlier work counts as removal.
+    """
+    out = []
+    for path, added, deleted, is_new in rows:
+        start_added, start_deleted = (baseline.get(path) or [0, 0])[:2]
+        grew = max(0, added - start_added) + max(0, start_deleted - deleted)
+        shrank = max(0, deleted - start_deleted) + max(0, start_added - added)
+        if grew or shrank:
+            out.append((path, grew, shrank, is_new))
+    pending = {row[0] for row in rows}
+    out += [(path, start[1], start[0], False) for path, start in baseline.items() if path not in pending]
+    return out
+
+
+def diff_shape(root: str, base: str | None, rows: list[Row], baseline: dict) -> dict:
     existing = [r for r in rows if not r[3]]
-    prose_heavy = prose_heavy_files(root, base, [r[0] for r in rows if r[1] >= PROSE_MIN_ADDED])
+    prose_heavy = prose_heavy_files(
+        root, base, [r[0] for r in rows if r[1] >= PROSE_MIN_ADDED], baseline
+    )
     changed_source = [r[0] for r in rows if is_source_path(r[0])]
     changed_tests = [r[0] for r in rows if is_test_path(r[0])]
     fingerprint = hashlib.sha1(
@@ -372,46 +430,79 @@ def diff_shape(cwd: str) -> dict | None:
         "root": root,
         "source_files": len(changed_source),
         "test_files": len(changed_tests),
+        "code_files": sum(1 for r in rows if holds_code(r[0])),
     }
 
 
 # ----- assessment ------------------------------------------------------------
 
 
-def last_assistant_text(transcript_path: str | None) -> str | None:
-    """The text of the last assistant message in the session transcript, or None.
-
-    None also covers "no transcript, unreadable, or an unfamiliar format", which is what
-    makes the summary check fail open: a format change here must never block a stop.
-    """
+def transcript_tail(transcript_path: str | None) -> list[dict]:
+    """The entries at the end of the session transcript; [] when it is absent or unreadable."""
     if not transcript_path:
-        return None
+        return []
     try:
         with open(transcript_path, "rb") as fh:
             fh.seek(0, os.SEEK_END)
             fh.seek(max(0, fh.tell() - MAX_TRANSCRIPT_TAIL_BYTES))
             raw = fh.read().decode("utf-8", errors="replace")
     except OSError:
-        return None
-    for line in reversed(raw.splitlines()):
+        return []
+    entries = []
+    for line in raw.splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def result_text(content: object) -> str:
+    """A tool result's text: the string itself, or its first text block."""
+    if isinstance(content, str):
+        return content
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return str(block.get("text", ""))
+    return ""
+
+
+def entry_time(entry: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(entry["timestamp"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError):
+        return None
+
+
+def background_pending(transcript_path: str | None) -> bool:
+    """Whether a background command or agent started in the transcript's tail has not finished.
+
+    The stop is then a pause, not the hand-back. A transcript in an unfamiliar format reads as
+    nothing pending, so the checks run as they would without this.
+    """
+    pending: dict[str, tuple[str, datetime | None]] = {}  # tool use id -> (task id, launched at)
+    latest = None
+    for entry in transcript_tail(transcript_path):
+        latest = entry_time(entry) or latest
+        if entry.get("type") != "user":
             continue
         content = (entry.get("message") or {}).get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            text = "\n".join(
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
-            if text.strip():
-                return text
-    return None
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                launched = BACKGROUND_LAUNCH_RE.match(result_text(block.get("content")))
+                if launched:
+                    pending[str(block.get("tool_use_id"))] = (launched[1] or launched[2], entry_time(entry))
+        text = content if isinstance(content, str) else json.dumps(content)
+        for tool_use_id in TASK_DONE_RE.findall(text):
+            pending.pop(tool_use_id, None)
+        stopped = set(TASK_STOPPED_RE.findall(text))
+        pending = {use: task for use, task in pending.items() if task[0] not in stopped}
+    return any(
+        not (at and latest and (latest - at).total_seconds() > BACKGROUND_STALE_SECONDS)
+        for _, at in pending.values()
+    )
 
 
 def assess(shape: dict) -> tuple[bool, bool]:
@@ -425,7 +516,7 @@ def assess(shape: dict) -> tuple[bool, bool]:
 
 def summary_line(shape: dict) -> str:
     return (
-        "leave-it-smaller: +{added} / -{deleted} across {files} file(s) "
+        "leave-it-smaller: this session +{added} / -{deleted} across {files} file(s) "
         "({existing_files} existing: +{existing_added} / -{existing_deleted}; "
         "{new_files} new)"
     ).format(**shape)
@@ -470,11 +561,26 @@ def emit(payload: dict) -> None:
 
 
 def run_stop(payload: dict) -> None:
-    shape = diff_shape(payload.get("cwd") or os.getcwd())
-    if not shape or shape["files"] == 0:
+    if background_pending(payload.get("transcript_path")):
         return
+    change = pending_change(payload.get("cwd") or os.getcwd())
+    if change is None:
+        return
+    root, base, rows = change
     session_id = session_of(payload)
     state = load_state(session_id)
+    if "baseline" not in state:
+        # No SessionStart for this session, e.g. the plugin arrived mid-session: it all counts.
+        state.update(base=base, baseline={})
+    elif state.get("base") != base:
+        # A push, pull or branch switch moved the base, so the old counts no longer line up.
+        state.update(base=base, baseline=baseline_of(root, rows))
+        save_state(session_id, state)
+        return
+    shape = diff_shape(root, base, session_rows(rows, state["baseline"]), state["baseline"])
+    if shape["files"] == 0:
+        save_state(session_id, state)
+        return
     changed = state.get("fingerprint") != shape["fingerprint"]
     add_only, large = assess(shape)
     summary = summary_line(shape)
@@ -486,11 +592,9 @@ def run_stop(payload: dict) -> None:
     )
     reasons = []
     if can_nudge and add_only and not state.get("add_only_nudged"):
-        reasons.append(ADD_ONLY_MESSAGE.format(**shape))
+        message = ADD_ONLY_MESSAGE if shape["code_files"] else DOCS_ADD_ONLY_MESSAGE
+        reasons.append(message.format(**shape))
         state["add_only_nudged"] = True
-    if can_nudge and large and not state.get("large_nudged"):
-        reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
-        state["large_nudged"] = True
     if (
         can_nudge
         and not state.get("tests_nudged")
@@ -503,11 +607,6 @@ def run_stop(payload: dict) -> None:
     if can_nudge and not state.get("prose_nudged") and shape["prose_heavy"]:
         reasons.append(PROSE_MESSAGE.format(files="\n".join(shape["prose_heavy"][:5])))
         state["prose_nudged"] = True
-    if can_nudge and not state.get("summary_nudged") and shape["added"] + shape["deleted"] >= MIN_ADDED:
-        summary_text = last_assistant_text(payload.get("transcript_path"))
-        if summary_text is not None and not DIFF_SHAPE_RE.search(summary_text):
-            reasons.append(SUMMARY_MESSAGE)
-            state["summary_nudged"] = True
 
     state["fingerprint"] = shape["fingerprint"]
     if reasons:
@@ -522,18 +621,18 @@ def run_stop(payload: dict) -> None:
 
 
 def run_session_start(payload: dict) -> None:
-    cwd = payload.get("cwd") or os.getcwd()
-    shape = diff_shape(cwd)
-    if shape is None:
+    change = pending_change(payload.get("cwd") or os.getcwd())
+    if change is None:
         return
+    root, base, rows = change
     # Work already in the tree is not this session's to answer for; resume and compaction
     # fire SessionStart again, so only the first one sets the baseline.
     session_id = session_of(payload)
     state = load_state(session_id)
-    if "fingerprint" not in state:
-        state["fingerprint"] = shape["fingerprint"]
+    if "baseline" not in state:
+        state.update(base=base, baseline=baseline_of(root, rows))
         save_state(session_id, state)
-    text = project_instructions(shape["root"])
+    text = project_instructions(root)
     if TOOLBOX_HEADING in text or TOOLBOX_OPT_OUT in text:
         return
     print(TOOLBOX_HINT)
