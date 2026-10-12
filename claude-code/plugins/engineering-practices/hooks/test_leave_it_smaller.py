@@ -103,6 +103,39 @@ class HookCase(unittest.TestCase):
         self.run_hook("session-start")
         self.assertEqual(self.run_hook("stop").get("decision"), "block")
 
+    def test_a_session_on_a_branch_with_earlier_work_is_measured_on_its_own_lines(self) -> None:
+        git(self.repo, "checkout", "-qb", "feature")
+        (self.repo / "a.py").write_text(lines(10) + lines(300, "earlier"))
+        git(self.repo, "commit", "-qam", "earlier session")
+        self.run_hook("session-start")
+        (self.repo / "a.py").write_text(lines(10) + lines(310, "earlier"))
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("+10 / -0", out["systemMessage"])
+
+    def test_undoing_earlier_work_counts_as_removed(self) -> None:
+        (self.repo / "a.py").write_text(lines(10) + lines(500, "earlier"))
+        self.run_hook("session-start")
+        git(self.repo, "checkout", "a.py")
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("+0 / -500", out["systemMessage"])
+
+    def test_pushing_the_default_branch_starts_a_new_baseline(self) -> None:
+        remote = self.tmp / "remote.git"
+        git(self.repo, "init", "-q", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-qu", "origin", "main")
+        (self.repo / "a.py").write_text(lines(10) + lines(100, "earlier"))
+        git(self.repo, "commit", "-qam", "unpushed before the session")
+        self.run_hook("session-start")
+        git(self.repo, "push", "-q")
+        self.assertEqual(self.run_hook("stop"), {})
+        (self.repo / "a.py").write_text(lines(10) + lines(150, "earlier"))
+        out = self.run_hook("stop")
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("+50 / -0", out["reason"])
+
     def test_stop_hook_active_never_blocks(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
         out = self.run_hook("stop", stop_hook_active=True)
@@ -280,6 +313,15 @@ class HookCase(unittest.TestCase):
         (self.repo / "c.py").write_text(f'def f():\n    """Contract.\n\n{doc}    """\n    return 1\n')
         out = self.run_hook("stop")
         self.assertIn("c.py: +25 lines, 23 of them comments or docstrings", out["reason"])
+
+    def test_comments_written_before_the_session_are_not_its_prose(self) -> None:
+        (self.repo / "c.py").write_text(self.commented(code=10, prose=0))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "c")
+        (self.repo / "c.py").write_text(self.commented(code=10, prose=30))
+        self.run_hook("session-start")
+        (self.repo / "c.py").write_text(self.commented(code=35, prose=30))
+        self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
 
     def test_small_growth_is_not_measured_for_prose(self) -> None:
         (self.repo / "a.py").write_text(lines(10) + self.commented(code=0, prose=15))

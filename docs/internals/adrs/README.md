@@ -34,3 +34,4 @@ What this makes easy, what it makes hard, and what it rules out.
 | [0006](0006-task-rules-rank-above-the-practices.md) | The task's own rules rank above the practices | Accepted | 2026-10-02 |
 | [0007](0007-opt-out-marker-in-claude-md.md) | Let a project opt out with a CLAUDE.md marker | Accepted | 2026-10-10 |
 | [0008](0008-block-only-on-checks-that-change-the-code.md) | Block the stop only on checks that lead to a change | Accepted | 2026-10-12 |
+| [0009](0009-measure-only-the-sessions-own-change.md) | Measure only the session's own change | Accepted | 2026-10-12 |

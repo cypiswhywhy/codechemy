@@ -6,7 +6,7 @@ silent in a project that opts out ([../usage/opt-out.md](../usage/opt-out.md)).
 | Event | Script | Does |
 |---|---|---|
 | `SessionStart` | `hooks/practices.py` | prints the [practices](practices.md) into the session |
-| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records the change already in the tree; hints at `/maintenance-toolbox` |
+| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records what is already pending, so the session answers only for its own changes; hints at `/maintenance-toolbox` |
 | `Stop` | `hooks/leave_it_smaller.py stop` | measures the change and may block the stop once |
 
 ## `practices` (`hooks/practices.py`)
@@ -18,14 +18,16 @@ Editing a practice takes effect in the next session.
 
 ## `leave-it-smaller` (`hooks/leave_it_smaller.py`)
 
-One script, two events. `stop` measures the whole pending change (branch vs merge-base with
-`main`/`master` plus working tree; on the default branch, unpushed commits plus working tree;
-untracked files count as new, binaries are ignored) and acts per stop:
+One script, two events. `stop` measures what this session changed: the pending change (branch vs
+merge-base with `main`/`master` plus working tree; on the default branch, unpushed commits plus
+working tree; untracked files count as new, binaries are ignored), less what was already pending
+when the session started. Edits someone else makes in the same checkout during the session count
+as the session's. It acts per stop:
 
 | Condition (defaults) | Action |
 |---|---|
-| no repository, no change, or no change since the session started | silent |
-| the change gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
+| no repository, or no change by this session | silent |
+| the session gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
 | source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
 | a source file grew ≥ 20 lines, ≥ 40 % of them comments or docstrings, and 15 points past the file's own density | **block once per session** naming the files and asking for the pass "Say less in the code" describes: delete comments that narrate or restate, cut docstrings to the contract |
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |
@@ -34,9 +36,15 @@ The change's size and whether the summary states `+N / -M` are shown, not asked:
 them led to explanations rather than changes ([ADR 0008](../internals/adrs/0008-block-only-on-checks-that-change-the-code.md)).
 Bounded by construction: never while the agent is already continuing because of a stop
 hook, never twice for the same diff, each check at most once per session, at most two blocks per
-session in all; after that the smell is still shown to you but the agent is not interrupted. `session-start` records the
-shape already in the tree, so a session that changes nothing is not asked about earlier work; once it
-changes anything, the whole pending change is measured again. It also tells the agent to offer
+session in all; after that the smell is still shown to you but the agent is not interrupted.
+
+`session-start` records each pending file's added and removed lines (and, for source files, its
+line and comment counts). The session's own change is then measured per file as the change in
+those counts, so lines it adds and removes within one file net out, and undoing earlier work
+counts as removal. When the base moves (a push or pull on the default branch, a branch switch),
+the counts no longer line up: that stop is silent and the baseline starts again from there. A
+session with no recorded start, such as one already running when the plugin was installed, is
+measured on the whole pending change. `session-start` also tells the agent to offer
 `/maintenance-toolbox` once when the repository's `CLAUDE.md` has no `## Maintenance toolbox`.
 
 ### Settings

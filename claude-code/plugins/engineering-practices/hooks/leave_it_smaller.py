@@ -4,17 +4,17 @@
     python3 leave_it_smaller.py stop            # Stop hook
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
-Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and blocks the stop when it fails one of three checks - the change only
-added lines, it edits source without touching a test in a repository that has tests, or a
-source file grew mostly by comments and docstrings. The nudge is bounded: never while the agent is already continuing because of a
-stop hook, never for a diff it has already nudged on or found at session start, each check at
-most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a one-line system message.
+Stop: measures what this session changed (the branch versus its base, plus the working tree,
+less what was already pending at session start) and blocks the stop when it fails one of three
+checks - the session only added lines, it edited source without touching a test in a repository
+that has tests, or a source file grew mostly by comments and docstrings. The nudge is bounded:
+never while the agent is already continuing because of a stop hook, never twice for the same
+diff, each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops
+in all. Otherwise the shape is shown to the user as a one-line system message.
 
-SessionStart: records the shape of the change already in the tree, so a session that changes
-nothing is never asked about it, and points the agent at /maintenance-toolbox when the
-repository's CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint /
-test commands are recorded).
+SessionStart: records what is already pending, so a session is asked only about its own
+changes, and points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
+`## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
 
 Both are silent in a project whose CLAUDE.md carries practices.OPT_OUT.
 
@@ -166,7 +166,7 @@ def merge_base(cwd: str | Path, a: str, b: str) -> str | None:
 
 
 def base_ref(root: str) -> str | None:
-    """The commit the change is measured against; None for a repository with no commits.
+    """The commit (a full hash) the change is measured against; None with no commits yet.
 
     On a feature branch that is the merge-base with the default branch, so the whole
     branch counts (the PR shape). On the default branch it is the merge-base with the
@@ -174,16 +174,17 @@ def base_ref(root: str) -> str | None:
     """
     if not ref_exists(root, "HEAD"):
         return None
+    head = git(root, "rev-parse", "HEAD").strip()
     branch = git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
     default = next((c for c in DEFAULT_BRANCH_CANDIDATES if ref_exists(root, c)), None)
     if default == "origin/HEAD":
         default = git(root, "rev-parse", "--abbrev-ref", "origin/HEAD").strip()
     default_short = default.split("/", 1)[1] if default and default.startswith("origin/") else default
     if branch != "HEAD" and default and default_short != branch:
-        return merge_base(root, "HEAD", default) or "HEAD"
+        return merge_base(root, "HEAD", default) or head
     if ref_exists(root, "@{upstream}"):
-        return merge_base(root, "HEAD", "@{upstream}") or "HEAD"
-    return "HEAD"
+        return merge_base(root, "HEAD", "@{upstream}") or head
+    return head
 
 
 def rename_target(numstat_path: str) -> str:
@@ -243,35 +244,51 @@ def prose_lines(path: str, text: str) -> int:
     return sum(1 for line in text.splitlines() if line.lstrip().startswith(prefixes))
 
 
-def prose_heavy_files(root: str, base: str | None, paths: list[str]) -> list[str]:
+def is_prose_measured(path: str) -> bool:
+    return is_source_path(path) and PurePosixPath(path).suffix.lower() in {".py", *COMMENT_PREFIXES}
+
+
+def file_counts(root: str, path: str) -> list[int] | None:
+    """[lines, prose lines] of the working copy, for a file the prose check reads; else None."""
+    if not is_prose_measured(path):
+        return None
+    try:
+        text = (Path(root) / path).read_text(errors="replace")
+    except OSError:
+        return None
+    return [text.count("\n"), prose_lines(path, text)]
+
+
+def prose_heavy_files(root: str, base: str | None, paths: list[str], baseline: dict) -> list[str]:
     """One line per source file whose growth was mostly comments and docstrings.
 
     A file counts when it grew by at least PROSE_MIN_ADDED lines, at least PROSE_SHARE of that
     growth is prose, and that share exceeds the file's own density before the change by
     PROSE_GAP - the practice is to match the density of the file you are in, so a file that
-    was already half prose is not asked to change.
+    was already half prose is not asked to change. "Before" is the file at session start when
+    the baseline recorded it, else its version at ``base``.
     """
     rows = []
     for path in paths:
-        if not is_source_path(path) or PurePosixPath(path).suffix.lower() not in {".py", *COMMENT_PREFIXES}:
+        after = file_counts(root, path)
+        if after is None:
             continue
-        try:
-            after = (Path(root) / path).read_text(errors="replace")
-        except OSError:
-            continue
-        before = ""
-        if base is not None:
-            try:
-                before = git(root, "show", f"{base}:{path}")
-            except GitError:
-                pass
-        grown = after.count("\n") - before.count("\n")
+        before = (baseline.get(path) or [0, 0, None, None])[2:]
+        if before[0] is None:
+            text = ""
+            if base is not None:
+                try:
+                    text = git(root, "show", f"{base}:{path}")
+                except GitError:
+                    pass
+            before = [text.count("\n"), prose_lines(path, text)]
+        before_lines, before_prose = before
+        grown = after[0] - before_lines
         if grown < PROSE_MIN_ADDED:
             continue
-        prose_grown = prose_lines(path, after) - prose_lines(path, before)
+        prose_grown = after[1] - before_prose
         share = prose_grown / grown
-        before_lines = before.count("\n")
-        density = prose_lines(path, before) / before_lines if before_lines else 0.0
+        density = before_prose / before_lines if before_lines else 0.0
         if share >= PROSE_SHARE and share >= density + PROSE_GAP:
             rows.append(
                 f"- {path}: +{grown} lines, {prose_grown} of them comments or docstrings "
@@ -304,13 +321,16 @@ def count_lines(path: Path) -> int | None:
     return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
-def diff_shape(cwd: str) -> dict | None:
-    """Per-file additions/deletions of the pending change, or None outside a repository."""
+Row = tuple[str, int, int, bool]  # (path, added, deleted, is_new)
+
+
+def pending_change(cwd: str) -> tuple[str, str | None, list[Row]] | None:
+    """(repository root, base commit, per-file rows) of the pending change; None outside a repository."""
     try:
         root = git(cwd, "rev-parse", "--show-toplevel").strip()
     except (GitError, OSError):
         return None
-    rows: list[tuple[str, int, int, bool]] = []  # (path, added, deleted, is_new)
+    rows: list[Row] = []
     base = base_ref(root)
     if base is not None:
         status: dict[str, str] = {}
@@ -329,9 +349,40 @@ def diff_shape(cwd: str) -> dict | None:
         lines = count_lines(Path(root) / path)
         if lines is not None:
             rows.append((path, lines, 0, True))
+    return root, base, rows
 
+
+def baseline_of(root: str, rows: list[Row]) -> dict:
+    """What was already pending, per path: [added, deleted, lines, prose lines]."""
+    return {
+        path: [added, deleted, *(file_counts(root, path) or [None, None])]
+        for path, added, deleted, _ in rows
+    }
+
+
+def session_rows(rows: list[Row], baseline: dict) -> list[Row]:
+    """The rows less what was pending at session start, per file.
+
+    Measured per file as the change in its counts, so lines a session adds and removes within
+    one file net out. Undoing earlier work counts as removal.
+    """
+    out = []
+    for path, added, deleted, is_new in rows:
+        start_added, start_deleted = (baseline.get(path) or [0, 0])[:2]
+        grew = max(0, added - start_added) + max(0, start_deleted - deleted)
+        shrank = max(0, deleted - start_deleted) + max(0, start_added - added)
+        if grew or shrank:
+            out.append((path, grew, shrank, is_new))
+    pending = {row[0] for row in rows}
+    out += [(path, start[1], start[0], False) for path, start in baseline.items() if path not in pending]
+    return out
+
+
+def diff_shape(root: str, base: str | None, rows: list[Row], baseline: dict) -> dict:
     existing = [r for r in rows if not r[3]]
-    prose_heavy = prose_heavy_files(root, base, [r[0] for r in rows if r[1] >= PROSE_MIN_ADDED])
+    prose_heavy = prose_heavy_files(
+        root, base, [r[0] for r in rows if r[1] >= PROSE_MIN_ADDED], baseline
+    )
     changed_source = [r[0] for r in rows if is_source_path(r[0])]
     changed_tests = [r[0] for r in rows if is_test_path(r[0])]
     fingerprint = hashlib.sha1(
@@ -412,11 +463,24 @@ def emit(payload: dict) -> None:
 
 
 def run_stop(payload: dict) -> None:
-    shape = diff_shape(payload.get("cwd") or os.getcwd())
-    if not shape or shape["files"] == 0:
+    change = pending_change(payload.get("cwd") or os.getcwd())
+    if change is None:
         return
+    root, base, rows = change
     session_id = session_of(payload)
     state = load_state(session_id)
+    if "baseline" not in state:
+        # No SessionStart for this session, e.g. the plugin arrived mid-session: it all counts.
+        state.update(base=base, baseline={})
+    elif state.get("base") != base:
+        # A push, pull or branch switch moved the base, so the old counts no longer line up.
+        state.update(base=base, baseline=baseline_of(root, rows))
+        save_state(session_id, state)
+        return
+    shape = diff_shape(root, base, session_rows(rows, state["baseline"]), state["baseline"])
+    if shape["files"] == 0:
+        save_state(session_id, state)
+        return
     changed = state.get("fingerprint") != shape["fingerprint"]
     add_only, large = assess(shape)
     summary = summary_line(shape)
@@ -456,18 +520,18 @@ def run_stop(payload: dict) -> None:
 
 
 def run_session_start(payload: dict) -> None:
-    cwd = payload.get("cwd") or os.getcwd()
-    shape = diff_shape(cwd)
-    if shape is None:
+    change = pending_change(payload.get("cwd") or os.getcwd())
+    if change is None:
         return
+    root, base, rows = change
     # Work already in the tree is not this session's to answer for; resume and compaction
     # fire SessionStart again, so only the first one sets the baseline.
     session_id = session_of(payload)
     state = load_state(session_id)
-    if "fingerprint" not in state:
-        state["fingerprint"] = shape["fingerprint"]
+    if "baseline" not in state:
+        state.update(base=base, baseline=baseline_of(root, rows))
         save_state(session_id, state)
-    text = project_instructions(shape["root"])
+    text = project_instructions(root)
     if TOOLBOX_HEADING in text or TOOLBOX_OPT_OUT in text:
         return
     print(TOOLBOX_HINT)
