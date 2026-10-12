@@ -1,6 +1,6 @@
 # 0002. Cut increments at a shippable piece of value, not at a line count
 
-- **Status**: Accepted
+- **Status**: Accepted; the Stop-hook question superseded by [0008](0008-block-only-on-checks-that-change-the-code.md)
 - **Date**: 2026-09-14
 
 ## Context

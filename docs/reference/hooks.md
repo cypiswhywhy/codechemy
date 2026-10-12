@@ -26,15 +26,13 @@ untracked files count as new, binaries are ignored) and acts per stop:
 |---|---|
 | no repository, no change, or no change since the session started | silent |
 | the change gained ≥ 40 lines and lost < 10 % of that | **block once per session** with the diff shape and three questions: does it duplicate what already exists, did it supersede a path still in the tree, is there anything dead in what it touched |
-| total change ≥ 400 lines | **block once per session** asking which landing points were named up front, and refusing a retroactive slice by file or layer as a split |
 | source files changed, no test changed, and the repo has tests | **block once per session** asking which behaviour changed and what now covers it - or to say that none did, with the test command and its result |
 | a source file grew ≥ 20 lines, ≥ 40 % of them comments or docstrings, and 15 points past the file's own density | **block once per session** naming the files and asking for the pass "Say less in the code" describes: delete comments that narrate or restate, cut docstrings to the contract |
-| the change is ≥ 40 lines and the last message states no `+N / -M` | **block once per session** asking for the diff shape and the test result the contract requires |
-| otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files` |
+| otherwise, when the shape changed since the last stop | one-line `systemMessage` with `+N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |
 
-The summary check reads the session transcript for the message the agent is about to hand back; when
-there is no transcript, or its format is not the one expected, the check passes rather than
-blocking. Bounded by construction: never while the agent is already continuing because of a stop
+The change's size and whether the summary states `+N / -M` are shown, not asked: questions about
+them led to explanations rather than changes ([ADR 0008](../internals/adrs/0008-block-only-on-checks-that-change-the-code.md)).
+Bounded by construction: never while the agent is already continuing because of a stop
 hook, never twice for the same diff, each check at most once per session, at most two blocks per
 session in all; after that the smell is still shown to you but the agent is not interrupted. `session-start` records the
 shape already in the tree, so a session that changes nothing is not asked about earlier work; once it
@@ -49,7 +47,7 @@ Environment variables, set in a shell or in a settings file's `env` block.
 |---|---|---|
 | `LEAVE_IT_SMALLER_MIN_ADDED` | `40` | added lines before "add-only" can trigger |
 | `LEAVE_IT_SMALLER_MAX_RATIO` | `0.10` | deletions/additions below which the change reads as "add-only" |
-| `LEAVE_IT_SMALLER_LARGE` | `400` | total changed lines from which to look for a shippable increment |
+| `LEAVE_IT_SMALLER_LARGE` | `400` | total changed lines from which the shown shape is flagged `large change` |
 | `LEAVE_IT_SMALLER_MAX_NUDGES` | `2` | blocked stops per session |
 | `LEAVE_IT_SMALLER_PROSE_SHARE` | `0.40` | share of a file's growth that is comments or docstrings from which it reads as prose-heavy |
 | `LEAVE_IT_SMALLER_DISABLE` | unset | `1` silences both events |

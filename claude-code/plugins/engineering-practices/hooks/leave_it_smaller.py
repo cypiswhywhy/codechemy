@@ -5,10 +5,9 @@
     python3 leave_it_smaller.py session-start   # SessionStart hook
 
 Stop: measures the shape of the change about to be handed back (the branch versus its base,
-plus the working tree) and blocks the stop when it fails one of five checks - the change only
-added lines, it is already large, it edits source without touching a test in a repository that
-has tests, a source file grew mostly by comments and docstrings, or the summary does not state
-the diff shape. The nudge is bounded: never while the agent is already continuing because of a
+plus the working tree) and blocks the stop when it fails one of three checks - the change only
+added lines, it edits source without touching a test in a repository that has tests, or a
+source file grew mostly by comments and docstrings. The nudge is bounded: never while the agent is already continuing because of a
 stop hook, never for a diff it has already nudged on or found at session start, each check at
 most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a one-line system message.
 
@@ -50,7 +49,7 @@ def _env_number(name: str, default: float) -> float:
 # that count reads as "add-only", whether the lines landed in existing files or new ones.
 MIN_ADDED = int(_env_number("LEAVE_IT_SMALLER_MIN_ADDED", 40))
 MAX_RATIO = _env_number("LEAVE_IT_SMALLER_MAX_RATIO", 0.10)
-# Total changed lines from which to look for a separately shippable increment.
+# Total changed lines from which the reported shape carries "large change".
 LARGE = int(_env_number("LEAVE_IT_SMALLER_LARGE", 400))
 # Upper bound on blocked stops per session.
 MAX_NUDGES = int(_env_number("LEAVE_IT_SMALLER_MAX_NUDGES", 2))
@@ -95,13 +94,6 @@ COMMENT_PREFIXES = {
     ".swift": ("//", "/*", "*"), ".php": ("//", "/*", "*", "#"), ".rb": ("#",),
     ".sh": ("#",), ".bash": ("#",), ".zsh": ("#",), ".pl": ("#",), ".r": ("#",),
 }
-# `+45 / -8`, `+45/-8`, `+1,024 / -20`: the diff shape every summary has to end with.
-# The minus accepts the typographic dashes a Markdown summary is routinely written with,
-# or the check rejects summaries that do state the shape.
-DIFF_SHAPE_RE = re.compile(r"\+\s?[\d,]+\s*/\s*[-\u2010-\u2015\u2212]\s?[\d,]+")
-# A transcript grows for the whole session; only its tail can hold the last message.
-MAX_TRANSCRIPT_TAIL_BYTES = 256_000
-
 ADD_ONLY_MESSAGE = (
     "This change added +{added} and removed only -{deleted}, across {existing_files} existing "
     "file(s) and {new_files} new one(s). Before you finish, make one pass over what you wrote "
@@ -114,15 +106,6 @@ ADD_ONLY_MESSAGE = (
     "need, or a comment or docstring that only restates the code, in what you touched?\n"
     "Prove each removal first (the project's Maintenance toolbox, then a caller grep). If "
     "nothing can go, say which of the three you checked, with the diff shape."
-)
-LARGE_MESSAGE = (
-    "This change is already {total} lines. Say in your summary which landing points you named "
-    "before you started, and put each through the test: merged on its own and stopped there, is "
-    "anyone better off, with main still green? One piece of value lands whole - size alone is "
-    "not a reason to split it, and slicing a finished diff by file or by layer is not a split. "
-    "If a complete, separately useful piece really is in here, land it as its own commit or PR "
-    "first and say how the rest follows. If you named no seams up front, say so, and name them "
-    "now for the work that is left."
 )
 TESTS_MESSAGE = (
     "This change edits {source_files} source file(s) and no test changed with it, in a "
@@ -140,11 +123,6 @@ PROSE_MESSAGE = (
     "the review that shaped it, restates the line under it, or explains a line you could "
     "rename or split instead; cut each docstring to the contract and the surprise; keep only "
     "the reasons that live outside the code. Say what you removed, with the diff shape."
-)
-SUMMARY_MESSAGE = (
-    "Your summary does not state the diff shape. End it with `+N / -M` and the files touched, "
-    "together with the tests you ran and their result. Zero removals in a change to existing "
-    "code is a smell - say why when that is the case."
 )
 TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
@@ -378,42 +356,6 @@ def diff_shape(cwd: str) -> dict | None:
 # ----- assessment ------------------------------------------------------------
 
 
-def last_assistant_text(transcript_path: str | None) -> str | None:
-    """The text of the last assistant message in the session transcript, or None.
-
-    None also covers "no transcript, unreadable, or an unfamiliar format", which is what
-    makes the summary check fail open: a format change here must never block a stop.
-    """
-    if not transcript_path:
-        return None
-    try:
-        with open(transcript_path, "rb") as fh:
-            fh.seek(0, os.SEEK_END)
-            fh.seek(max(0, fh.tell() - MAX_TRANSCRIPT_TAIL_BYTES))
-            raw = fh.read().decode("utf-8", errors="replace")
-    except OSError:
-        return None
-    for line in reversed(raw.splitlines()):
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(entry, dict) or entry.get("type") != "assistant":
-            continue
-        content = (entry.get("message") or {}).get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            text = "\n".join(
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
-            if text.strip():
-                return text
-    return None
-
-
 def assess(shape: dict) -> tuple[bool, bool]:
     """(the change only added, the change is already large)."""
     add_only = (
@@ -488,9 +430,6 @@ def run_stop(payload: dict) -> None:
     if can_nudge and add_only and not state.get("add_only_nudged"):
         reasons.append(ADD_ONLY_MESSAGE.format(**shape))
         state["add_only_nudged"] = True
-    if can_nudge and large and not state.get("large_nudged"):
-        reasons.append(LARGE_MESSAGE.format(total=shape["added"] + shape["deleted"]))
-        state["large_nudged"] = True
     if (
         can_nudge
         and not state.get("tests_nudged")
@@ -503,11 +442,6 @@ def run_stop(payload: dict) -> None:
     if can_nudge and not state.get("prose_nudged") and shape["prose_heavy"]:
         reasons.append(PROSE_MESSAGE.format(files="\n".join(shape["prose_heavy"][:5])))
         state["prose_nudged"] = True
-    if can_nudge and not state.get("summary_nudged") and shape["added"] + shape["deleted"] >= MIN_ADDED:
-        summary_text = last_assistant_text(payload.get("transcript_path"))
-        if summary_text is not None and not DIFF_SHAPE_RE.search(summary_text):
-            reasons.append(SUMMARY_MESSAGE)
-            state["summary_nudged"] = True
 
     state["fingerprint"] = shape["fingerprint"]
     if reasons:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for leave_it_smaller.py. Run: python3 test_hook.py
+"""Tests for leave_it_smaller.py. Run: python3 test_leave_it_smaller.py
 
 Each test builds a throwaway git repository and a throwaway CLAUDE_CONFIG_DIR, then drives
 the hook exactly as Claude Code does: a JSON payload on stdin, a subcommand argument.
@@ -139,23 +139,21 @@ class HookCase(unittest.TestCase):
         self.assertNotIn("add-only", out["systemMessage"])
         self.assertIn("+200 / -100", out["systemMessage"])
 
-    def test_large_change_nudges_once(self) -> None:
-        (self.repo / "b.py").write_text(lines(500))
-        first = self.run_hook("stop")
-        self.assertEqual(first.get("decision"), "block")
-        self.assertIn("already 500 lines", first["reason"])
-        self.assertIn("landing points you named", first["reason"])
-        # Still large, but the seam question is asked only once per session.
-        (self.repo / "b.py").write_text(lines(520))
-        second = self.run_hook("stop")
-        self.assertNotIn("decision", second)
-        self.assertIn("large change", second["systemMessage"])
+    def test_a_large_change_is_flagged_without_blocking(self) -> None:
+        (self.repo / "b.py").write_text(lines(100))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "b")
+        (self.repo / "b.py").write_text(lines(400, "other"))  # -100 / +400: large, not add-only
+        out = self.run_hook("stop")
+        self.assertNotIn("decision", out)
+        self.assertIn("large change", out["systemMessage"])
 
     def test_blocks_stop_at_the_cap_even_when_a_new_check_fails(self) -> None:
-        (self.repo / "a.py").write_text(lines(10) + lines(50, "new"))
-        self.assertEqual(self.run_hook("stop").get("decision"), "block")
-        (self.repo / "a.py").write_text(lines(10) + lines(500, "new"))
-        self.assertEqual(self.run_hook("stop").get("decision"), "block")
+        self.seed_tests()
+        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
+        self.assertIn("no test changed with it", self.run_hook("stop")["reason"])
+        (self.repo / "a.py").write_text(lines(2) + lines(95, "other"))
+        self.assertIn("removed only", self.run_hook("stop")["reason"])
         (self.repo / "c.py").write_text(lines(30, "# why"))
         third = self.run_hook("stop")
         self.assertNotIn("decision", third)
@@ -287,7 +285,7 @@ class HookCase(unittest.TestCase):
         (self.repo / "a.py").write_text(lines(10) + self.commented(code=0, prose=15))
         self.assertNotIn("comments or docstrings", json.dumps(self.run_hook("stop")))
 
-    # ----- the summary-shape check -----
+    # ----- the transcript -----
 
     def transcript(self, *texts: str) -> str:
         path = self.tmp / "transcript.jsonl"
@@ -297,37 +295,12 @@ class HookCase(unittest.TestCase):
         ))
         return str(path)
 
-    def test_summary_without_the_diff_shape_is_nudged(self) -> None:
+    def test_a_summary_without_the_diff_shape_does_not_block(self) -> None:
+        # The shape reaches the user as the hook's own systemMessage.
         (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
         out = self.run_hook("stop", transcript_path=self.transcript("Done, the parser handles it now."))
-        self.assertEqual(out.get("decision"), "block")
-        self.assertIn("diff shape", out["reason"])
-
-    def test_summary_with_the_diff_shape_passes(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        out = self.run_hook("stop", transcript_path=self.transcript("Done. +45 / -8 across 1 file."))
         self.assertNotIn("decision", out)
-
-    def test_a_typographic_minus_still_counts_as_the_diff_shape(self) -> None:
-        # Markdown summaries routinely carry U+2212 or an en dash where the hyphen was typed.
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        for n, dash in enumerate(("\u2212", "\u2013", "\u2014")):
-            with self.subTest(dash=dash):
-                # A fresh session each time: the check fires once per session, which would
-                # otherwise let the second and third dashes pass without being tested.
-                path = self.transcript(f"Done. +597 / {dash}151 across 25 files.")
-                out = self.run_hook("stop", transcript_path=path, session_id=f"dash{n}")
-                self.assertNotIn("decision", out)
-
-    def test_only_the_last_message_counts(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        path = self.transcript("+45 / -8 across 1 file.", "Actually, one more thing.")
-        self.assertEqual(self.run_hook("stop", transcript_path=path).get("decision"), "block")
-
-    def test_an_unreadable_transcript_is_silent(self) -> None:
-        (self.repo / "a.py").write_text(lines(2) + lines(45, "other"))
-        out = self.run_hook("stop", transcript_path=str(self.tmp / "nope.jsonl"))
-        self.assertNotIn("decision", out)
+        self.assertIn("+45 / -8", out["systemMessage"])
 
     # ----- session-start -----
 
