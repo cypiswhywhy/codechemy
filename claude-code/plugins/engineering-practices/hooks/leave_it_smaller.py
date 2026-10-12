@@ -8,13 +8,15 @@ Stop: measures what this session changed (the branch versus its base, plus the w
 less what was already pending at session start) and blocks the stop when it fails one of three
 checks - the session only added lines, it edited source without touching a test in a repository
 that has tests, or a source file grew mostly by comments and docstrings. The nudge is bounded:
-never while the agent is already continuing because of a stop hook, never twice for the same
-diff, each check at most once per session, and at most LEAVE_IT_SMALLER_MAX_NUDGES blocked stops
-in all. Otherwise the shape is shown to the user as a one-line system message.
+never while the agent is already continuing because of a stop hook or waiting on background work
+it started, never twice for the same diff, each check at most once per session, and at most
+LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown to the user as a
+one-line system message.
 
-SessionStart: records what is already pending, so a session is asked only about its own
-changes, and points the agent at /maintenance-toolbox when the repository's CLAUDE.md has no
-`## Maintenance toolbox` section (the place the dead-code / lint / test commands are recorded).
+SessionStart: records what is already pending, so a session is asked about its own changes
+rather than earlier work, and points the agent at /maintenance-toolbox when the repository's
+CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint / test commands
+are recorded).
 
 Both are silent in a project whose CLAUDE.md carries practices.OPT_OUT.
 

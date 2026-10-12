@@ -1,4 +1,4 @@
-# 0009. Measure only the session's own change
+# 0009. Measure the session's change, not the branch
 
 - **Status**: Accepted
 - **Date**: 2026-10-12
@@ -17,8 +17,8 @@ and comment counts for source files. Stop subtracts them per file and runs every
 difference. When the base itself moves, the stop is silent and the baseline restarts.
 
 ## Consequences
-- A session answers only for what it changed: a `/push` session on an older branch is asked
-  about its review fixes, not the branch.
+- A session answers for what it changed: a `/push` session on an older branch is asked about
+  its review fixes, not the branch. The exceptions follow.
 - The count is per file, so lines a session both adds and removes in one file net out. It is a
   lower bound, which errs towards not asking.
 - Work done before a push from the default branch, a pull or a rebase in the same session is

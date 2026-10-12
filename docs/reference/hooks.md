@@ -6,7 +6,7 @@ silent in a project that opts out ([../usage/opt-out.md](../usage/opt-out.md)).
 | Event | Script | Does |
 |---|---|---|
 | `SessionStart` | `hooks/practices.py` | prints the [practices](practices.md) into the session |
-| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records what is already pending, so the session answers only for its own changes; hints at `/maintenance-toolbox` |
+| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records what is already pending, so the session answers for its own changes rather than earlier work; hints at `/maintenance-toolbox` |
 | `Stop` | `hooks/leave_it_smaller.py stop` | measures the change and may block the stop once |
 
 ## `practices` (`hooks/practices.py`)
@@ -34,7 +34,7 @@ as the session's. It acts per stop:
 | otherwise, when the shape changed since the last stop | one-line `systemMessage` with `this session +N / -M across F files`, flagged `add-only` or `large change` (total ≥ 400 lines) when it is |
 
 The change's size and whether the summary states `+N / -M` are shown, not asked: questions about
-them led to explanations rather than changes ([ADR 0008](../internals/adrs/0008-block-only-on-checks-that-change-the-code.md)).
+them rarely led to a change ([ADR 0008](../internals/adrs/0008-stop-blocking-on-size-and-diff-shape.md)).
 Bounded by construction: never while the agent is already continuing because of a stop
 hook, never twice for the same diff, each check at most once per session, at most two blocks per
 session in all; after that the smell is still shown to you but the agent is not interrupted.

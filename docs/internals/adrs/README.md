@@ -27,11 +27,11 @@ What this makes easy, what it makes hard, and what it rules out.
 | # | Decision | Status | Date |
 |---|---|---|---|
 | [0001](0001-ship-as-a-plugin-with-the-contract-in-a-hook.md) | Ship as a plugin, with the contract printed by a SessionStart hook | Accepted | 2026-09-09 |
-| [0002](0002-cut-increments-at-shippable-value.md) | Cut increments at a shippable piece of value, not at a line count | Accepted; its Stop-hook question superseded by [0008](0008-block-only-on-checks-that-change-the-code.md) | 2026-09-14 |
+| [0002](0002-cut-increments-at-shippable-value.md) | Cut increments at a shippable piece of value, not at a line count | Accepted; its Stop-hook question superseded by [0008](0008-stop-blocking-on-size-and-diff-shape.md) | 2026-09-14 |
 | [0003](0003-fall-back-to-local-review-without-copilot.md) | Fall back to a local /code-review when Copilot is unavailable | Accepted | 2026-09-18 |
 | [0004](0004-bound-the-review-loop.md) | Bound the review loop | Accepted | 2026-09-21 |
 | [0005](0005-practices-as-rules-without-reasoning.md) | State the practices as rules, without the reasoning | Accepted | 2026-09-22 |
 | [0006](0006-task-rules-rank-above-the-practices.md) | The task's own rules rank above the practices | Accepted | 2026-10-02 |
 | [0007](0007-opt-out-marker-in-claude-md.md) | Let a project opt out with a CLAUDE.md marker | Accepted | 2026-10-10 |
-| [0008](0008-block-only-on-checks-that-change-the-code.md) | Block the stop only on checks that lead to a change | Accepted | 2026-10-12 |
-| [0009](0009-measure-only-the-sessions-own-change.md) | Measure only the session's own change | Accepted | 2026-10-12 |
+| [0008](0008-stop-blocking-on-size-and-diff-shape.md) | Stop blocking on a change's size and on the summary's diff shape | Accepted | 2026-10-12 |
+| [0009](0009-measure-the-sessions-change-not-the-branch.md) | Measure the session's change, not the branch | Accepted | 2026-10-12 |
