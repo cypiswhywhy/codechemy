@@ -1,5 +1,5 @@
 ---
-name: codebase-maintenance
+name: maintain
 description: End-to-end maintenance of an existing codebase, from audit to merge-ready pull request, in a single invocation. Audits eleven quality dimensions — dead code, duplication, dependencies, style consistency, security, correctness, design/SOLID, performance, clarity, test coverage and test quality, and documentation — then applies the findings as small verified commits, one per dimension, pushes, opens the PR, drives the automated review to green, and files whatever it did not do as issues. The user only reviews and merges. Starts by vetting the project's own CLAUDE.md / AGENTS.md for instructions that contradict good practice (blocking deletion, discouraging tests, mandating duplication), since such a rule silently disables whole dimensions. Interrupts at most once, for genuine judgment calls, and only after the safe work is already delivered; when the work exceeds one session it stops at a phase boundary and hands over a copy-pasteable prompt to continue in a fresh one. Use this whenever the user wants to clean up, slim down, tidy, harden, modernize, refactor, audit, or improve the quality of an existing repository; whenever they mention technical debt, code smells, dead code, duplication, "get this codebase in shape", or ask for a codebase review with the fixes actually applied. Also use it for narrower requests targeting one dimension — "find unused code", "why is our test coverage so bad", "make the style consistent", "check this repo for security issues", "our dependencies are ancient", "review my CLAUDE.md for bad instructions". Do not use it to write new features, or to review an uncommitted diff or a PR (use a code-review skill for that).
 ---
 
@@ -96,8 +96,13 @@ Findings get `RULES-nn` ids. Nothing here is applied without explicit approval, 
 approved changes land in their own commit before any code moves. If the user keeps a
 rule you flagged, follow it and note in the final report which dimensions it limited.
 
-**5. Establish the safety net.** Find and run the build, test and lint commands
-(`Makefile` targets first, then the language default). Record whether each passes.
+**5. Establish the safety net.** If `CLAUDE.md` has a `## Maintenance toolbox` section,
+use its commands — for tests and lint here, and for dead code and unused dependencies in
+Phase 1 — before any default from `references/`. If it has neither that section nor a
+`<!-- maintenance-toolbox: none -->` marker, run the `/maintenance-init-toolbox` steps
+first and commit the section on its own. Otherwise find the build, test and lint
+commands yourself (`Makefile` targets first, then the language default). Run each and
+record whether it passes.
 
 This is a gate, not a formality:
 
@@ -160,7 +165,7 @@ scope in step 8, since it may already answer what to work on.
 
 If the invocation carried arguments, they *are* the scope — take them and move on
 rather than asking a question the user has already answered. Paths narrow the tree
-(`/codebase-maintenance internal/auth`); dimension IDs or their plain-English
+(`/maintain internal/auth`); dimension IDs or their plain-English
 equivalents narrow the audit (`--only DEAD,DUP`, or "just dead code and duplication").
 A bare invocation means no scope was given, so propose the default and confirm it.
 

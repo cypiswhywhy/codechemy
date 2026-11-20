@@ -13,7 +13,7 @@ Every change is also a maintenance pass over the code it touches; this wins over
   flag or knob with one caller. Validating data from outside is not this ("Correct by
   construction").
 - Prove, then delete: run the project's `## Maintenance toolbox` commands and grep for callers,
-  tests, configs and docs. Without a toolbox section, offer `/maintenance-toolbox` once; until
+  tests, configs and docs. Without a toolbox section, offer `/maintenance-init-toolbox` once; until
   then the caller grep is the proof.
 - Tidy what the change touches and its neighbourhood. A wider refactor is a separate task; name
   it in the summary. Extracting a helper this change needs is not wider ("Reuse before adding").

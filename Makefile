@@ -11,7 +11,7 @@ PLUGIN := engineering-practices
 PREREQS := \
 	self-review:git \
 	push:git,gh \
-	codebase-maintenance:git,gh,python3 \
+	maintain:git,gh,python3 \
 	claude-customizations:python3 \
 	apply-increment:git,gh,openspec \
 	apply-all-increments:git,gh,openspec \

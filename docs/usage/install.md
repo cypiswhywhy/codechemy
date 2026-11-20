@@ -18,9 +18,9 @@ A missing command disables only what calls it.
 
 | Command | Needed by | Get it |
 |---|---|---|
-| `python3` 3.9+ | the hooks, `/codebase-maintenance`, `/claude-customizations` | https://www.python.org/downloads |
-| `git` | the hooks, `/push`, `/codebase-maintenance`, both increment skills | https://git-scm.com/downloads |
-| `gh` | `/push`, `/codebase-maintenance`, both increment skills | https://cli.github.com |
+| `python3` 3.9+ | the hooks, `/maintain`, `/claude-customizations` | https://www.python.org/downloads |
+| `git` | the hooks, `/push`, `/maintain`, both increment skills | https://git-scm.com/downloads |
+| `gh` | `/push`, `/maintain`, both increment skills | https://cli.github.com |
 | `openspec` | `/apply-increment`, `/apply-all-increments` | `npm install -g @fission-ai/openspec` |
 
 ## Update and uninstall
