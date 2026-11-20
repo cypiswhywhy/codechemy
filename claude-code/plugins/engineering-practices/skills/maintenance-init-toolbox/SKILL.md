@@ -1,6 +1,6 @@
 ---
-name: maintenance-toolbox
-description: Detect and record a project's dead-code, unused-dependency, lint, test and coverage commands as a `## Maintenance toolbox` section in its CLAUDE.md, so deletions can be proven before they are made. Trigger on "/maintenance-toolbox", "set up the maintenance toolbox", "which dead-code tool does this repo have", or when the leave-it-smaller SessionStart hint reports the section is missing.
+name: maintenance-init-toolbox
+description: Detect and record a project's dead-code, unused-dependency, lint, test and coverage commands as a `## Maintenance toolbox` section in its CLAUDE.md, so deletions can be proven before they are made. Trigger on "/maintenance-init-toolbox", "set up the maintenance toolbox", "which dead-code tool does this repo have", or when the leave-it-smaller SessionStart hint reports the section is missing.
 ---
 
 # Maintenance toolbox
@@ -13,7 +13,7 @@ This skill finds those tools **together with the user** and records them once, a
 reads them.
 
 It is a **record, not an audit**. Do not fix any finding the tools report while running it;
-that is `/codebase-maintenance`'s job.
+that is `/maintain`'s job.
 
 ## Steps
 
@@ -53,7 +53,7 @@ that is `/codebase-maintenance`'s job.
 
    ```markdown
    ## Maintenance toolbox
-   <!-- maintenance-toolbox: recorded YYYY-MM-DD by /maintenance-toolbox -->
+   <!-- maintenance-toolbox: recorded YYYY-MM-DD by /maintenance-init-toolbox -->
    Run before deleting anything, and again before handing back:
    - Dead code: `poetry run vulture src --min-confidence 80`
    - Unused dependencies: `poetry run deptry .`
@@ -72,7 +72,7 @@ that is `/codebase-maintenance`'s job.
 
 ## Rules
 
-- Never fix findings during this skill. Name them; `/codebase-maintenance` fixes them.
+- Never fix findings during this skill. Name them; `/maintain` fixes them.
 - Never add a dependency or change CI without the user's explicit yes in step 3.
 - Prefer the project's own scripts (`make lint`, `npm run test`) over raw tool invocations
   when they exist; the toolbox should match how the team already runs things.

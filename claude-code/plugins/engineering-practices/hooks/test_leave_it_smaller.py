@@ -421,7 +421,7 @@ class HookCase(unittest.TestCase):
     # ----- session-start -----
 
     def test_session_start_hints_without_toolbox(self) -> None:
-        self.assertIn("/maintenance-toolbox", self.run_hook("session-start"))
+        self.assertIn("/maintenance-init-toolbox", self.run_hook("session-start"))
 
     def test_session_start_silent_with_toolbox_or_opt_out(self) -> None:
         (self.repo / "CLAUDE.md").write_text("# x\n\n## Maintenance toolbox\n- Tests: `pytest`\n")

@@ -6,7 +6,7 @@ silent in a project that opts out ([../usage/opt-out.md](../usage/opt-out.md)).
 | Event | Script | Does |
 |---|---|---|
 | `SessionStart` | `hooks/practices.py` | prints the [practices](practices.md) into the session |
-| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records what is already pending, so the session answers for its own changes rather than earlier work; hints at `/maintenance-toolbox` |
+| `SessionStart` | `hooks/leave_it_smaller.py session-start` | records what is already pending, so the session answers for its own changes rather than earlier work; hints at `/maintenance-init-toolbox` |
 | `Stop` | `hooks/leave_it_smaller.py stop` | measures the change and may block the stop once |
 
 ## `practices` (`hooks/practices.py`)
@@ -46,7 +46,7 @@ counts as removal. When the base moves (a push or pull on the default branch, a 
 the counts no longer line up: that stop is silent and the baseline starts again from there. A
 session with no recorded start, such as one already running when the plugin was installed, is
 measured on the whole pending change. `session-start` also tells the agent to offer
-`/maintenance-toolbox` once when the repository's `CLAUDE.md` has no `## Maintenance toolbox`.
+`/maintenance-init-toolbox` once when the repository's `CLAUDE.md` has no `## Maintenance toolbox`.
 
 ### Settings
 

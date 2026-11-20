@@ -14,7 +14,7 @@ LEAVE_IT_SMALLER_MAX_NUDGES blocked stops in all. Otherwise the shape is shown t
 one-line system message.
 
 SessionStart: records what is already pending, so a session is asked about its own changes
-rather than earlier work, and points the agent at /maintenance-toolbox when the repository's
+rather than earlier work, and points the agent at /maintenance-init-toolbox when the repository's
 CLAUDE.md has no `## Maintenance toolbox` section (the place the dead-code / lint / test commands
 are recorded).
 
@@ -154,7 +154,7 @@ TOOLBOX_HINT = (
     "leave-it-smaller: this repository's CLAUDE.md has no `## Maintenance toolbox` section, so "
     "the dead-code, lint and test commands that deletions must be proven with are not recorded "
     "here. At the user's first substantive coding request, offer once to run "
-    "/maintenance-toolbox (it detects them together with the user and writes the section). Do "
+    "/maintenance-init-toolbox (it detects them together with the user and writes the section). Do "
     "not run it unasked. If the user declines, add `<!-- maintenance-toolbox: none -->` to the "
     "repository's CLAUDE.md so this hint stops."
 )
