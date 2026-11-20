@@ -13,7 +13,8 @@ This skill finds those tools **together with the user** and records them once, a
 reads them.
 
 It is a **record, not an audit**. Do not fix any finding the tools report while running it;
-that is `/maintain`'s job.
+that is `/maintain`'s job. `/maintain` reads this section in its Phase 0, and runs these
+steps itself when the section is missing and the project has not opted out.
 
 ## Steps
 

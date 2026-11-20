@@ -96,8 +96,13 @@ Findings get `RULES-nn` ids. Nothing here is applied without explicit approval, 
 approved changes land in their own commit before any code moves. If the user keeps a
 rule you flagged, follow it and note in the final report which dimensions it limited.
 
-**5. Establish the safety net.** Find and run the build, test and lint commands
-(`Makefile` targets first, then the language default). Record whether each passes.
+**5. Establish the safety net.** If `CLAUDE.md` has a `## Maintenance toolbox` section,
+use its commands — for tests and lint here, and for dead code and unused dependencies in
+Phase 1 — before any default from `references/`. If it has neither that section nor a
+`<!-- maintenance-toolbox: none -->` marker, run the `/maintenance-init-toolbox` steps
+first and commit the section on its own. Otherwise find the build, test and lint
+commands yourself (`Makefile` targets first, then the language default). Run each and
+record whether it passes.
 
 This is a gate, not a formality:
 
