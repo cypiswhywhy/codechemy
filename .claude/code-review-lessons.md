@@ -5,3 +5,7 @@ Tallies recurring classes of mistake caught in code review. One `##` section per
 ## New code added outside a hook's never-fail guard, trusting its input's shape
 
 - 2026-10-10, https://github.com/cypiswhywhy/codechemy/pull/16, opt-out check before the try; payload assumed to be a JSON object
+
+## Renaming a user-facing name without a breaking-change version bump
+
+- 2026-11-20, https://github.com/cypiswhywhy/codechemy/pull/19 - renamed two slash-command skills, bumped minor
