@@ -35,3 +35,4 @@ What this makes easy, what it makes hard, and what it rules out.
 | [0007](0007-opt-out-marker-in-claude-md.md) | Let a project opt out with a CLAUDE.md marker | Accepted | 2026-10-10 |
 | [0008](0008-stop-blocking-on-size-and-diff-shape.md) | Stop blocking on a change's size and on the summary's diff shape | Accepted | 2026-10-12 |
 | [0009](0009-measure-the-sessions-change-not-the-branch.md) | Measure the session's change, not the branch | Accepted | 2026-10-12 |
+| [0010](0010-project-workflow-section-in-claude-md.md) | Record per-project workflow choices in a CLAUDE.md section | Accepted | 2026-11-24 |

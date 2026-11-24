@@ -1,7 +1,8 @@
 # Set up automated Copilot code review
 
 `/push` uses GitHub Copilot as its code reviewer, and falls back to a local `/code-review` pass
-when Copilot is not available. To make Copilot review a repository's pull requests:
+when Copilot is not available. To use only the local pass in a repository, run `/kick-off`
+and choose `Review: local`. To make Copilot review a repository's pull requests:
 
 1. In the repository, open **Settings → Rules → Rulesets** and create a branch ruleset.
 2. Enable **Automatically request Copilot code review**. Optionally also:
