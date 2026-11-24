@@ -12,3 +12,7 @@ Tallies recurring classes of mistake caught in code review. One `##` section per
 
 ## A new "wait for the user" rule that forgets sessions nobody watches
 - 2026-11-24, https://github.com/cypiswhywhy/codechemy/pull/20 - `Plan approval: ask` would stop `claude -p` and subagents
+
+## A recorded choice overwritten by a run that never asked the user
+- 2026-11-24, https://github.com/cypiswhywhy/codechemy/pull/20 - re-running /kick-off reset skipped answers to defaults
+- 2026-11-24, https://github.com/cypiswhywhy/codechemy/pull/21 - headless /apply-increment wrote `Jira: none`; /kick-off without Atlassian wrote `Jira: off`

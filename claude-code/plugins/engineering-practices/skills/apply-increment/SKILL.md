@@ -49,7 +49,8 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
 
 3. **Read the change.** `openspec status --change "<name>" --json`, then
    `openspec instructions apply --change "<name>" --json`. Handle `blocked` and `all_done`
-   exactly as `/opsx:apply` does. Read every file in `contextFiles`. Treat `context` as
+   exactly as `/opsx:apply` does; on `all_done` with Jira on, also move the ticket named by
+   the `Jira:` line in `proposal.md` (step 5) to its `done` status unless it is there already. Read every file in `contextFiles`. Treat `context` as
    required input and `operationGuidance` as advisory, as that command specifies.
 
 4. **Find the next increment.** Task groups are the `## N. <name>` (or `### `) headings in the
@@ -61,29 +62,51 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
    value stays one increment. Never regroup silently. Announce
    `Increment k/m: <group name> (t tasks)`.
 
-5. **Branch.** The working tree must be clean; if it is not, stop and say what is pending.
+5. **Jira ticket**, only when the project's `## Project workflow` (CLAUDE.md or
+   CLAUDE.local.md, written by `/kick-off`) has a `Jira: <KEY> ...` line. One ticket covers the
+   whole change. Use the Atlassian MCP server's Jira tools; if they are not connected, say so
+   and go on without Jira rather than stopping.
+   - **Find it.** The `Jira: <KEY>-<n>` line in the change's `proposal.md`. Without one, search
+     the project for an open issue matching the change's name and the proposal's title, then
+     ask once: use the match, create a ticket (summary from the proposal's title, description
+     from its Why section, linking the change directory), or go on without one. Nobody to ask means without, recording nothing, so the next
+     attended run asks. Once step 6 has created the branch, record the answer as
+     `Jira: <KEY>-<n>`, or `Jira: none`, at the top of `proposal.md`, so it lands in this
+     increment's commit and later increments do not ask again. With `Jira: none`, skip to the
+     last bullet.
+   - **Read it** before implementing: description, acceptance criteria and recent comments.
+     Where they ask for something the change's tasks do not, or contradict them, list the gaps
+     and pause, as for added scope in step 7. Never resolve them silently in either direction.
+   - **Move it** to the `start` status unless it is already there or `done`. A ticket left in
+     `review` by the previous increment's PR comes back to `start` here.
+   - Put the `Jira:` line (key or `none`) in every commit's body, and a key at the start of the
+     PR title, so Jira links the work and `/push` does not ask again.
+
+6. **Branch.** The working tree must be clean; if it is not, stop and say what is pending.
    On the default branch, create `<type>/<change>-<k>-<slug>` from it. On another branch, stay
    on it and say so. Baseline the tests once (`## Maintenance toolbox` in CLAUDE.md, else the
    project's usual command) so a later failure is attributable to this increment.
 
-6. **Implement the group and nothing else.** Follow `/opsx:apply`'s guardrails per task:
+7. **Implement the group and nothing else.** Follow `/opsx:apply`'s guardrails per task:
    pause on ambiguity, surface added scope instead of absorbing it, tick `- [ ]` → `- [x]` only
    when a task's specified behaviour is fully implemented. A task from a later group that
    becomes tempting stays in its group. Apply the leave-it-smaller contract to the files
    touched. Run tests and lint; green is required to proceed.
 
-7. **Land it.** Commit with Conventional Commits, in as many commits as there are coherent
+8. **Land it.** Commit with Conventional Commits, in as many commits as there are coherent
    steps (refactor first). Then hand off to `/push` when that skill is available; otherwise
    `git push -u origin HEAD` and `gh pr create` with the title
-   `<type>(<change>): <group name> (increment k/m)` and a body that lists the group's tasks
+   `<type>(<change>): <group name> (increment k/m)`, prefixed with the Jira key from step 5 if
+   any, and a body that lists the group's tasks
    verbatim, links the change directory, and states how many increments remain.
 
-8. **Stop and report.** Increment done, the diff shape (`+N / -M`, files), tests run, PR URL,
+9. **Stop and report.** Increment done, the diff shape (`+N / -M`, files), tests run, PR URL,
    remaining groups by name, and the next command. Offer two: `/apply-increment <change>` after
    this PR merges (or immediately on a stacked branch, if the user prefers; say that stacking is
    the default only when they ask for it), and `/apply-all-increments <change>`, which always
    starts from a fresh main and walks through the remaining groups and the archive without
-   re-invoking. If the group was the last one, suggest `/opsx:archive`.
+   re-invoking. If the group was the last one, suggest `/opsx:archive`; with a Jira ticket, say that
+   running `/apply-increment <change>` once after the merge moves it to `done` (step 3).
 
 ## Rules
 
