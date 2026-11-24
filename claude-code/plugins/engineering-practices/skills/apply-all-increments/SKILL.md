@@ -90,6 +90,10 @@ working tree.
    - Then ask for the merge as in step 5, worded `PR #n (archive of <change>) passed the
      mechanical checks. Merge it.` with the MODIFIED or REMOVED note after it if there is one,
      and return to main as in step 6.
+   - With Jira on (`/apply-increment` step 5), take the key from the `Jira:` line of the
+     change's `proposal.md` before archiving, start the archive PR's title with it, and once
+     the merge is verified move the ticket to its `done` status unless it is there already.
+     `Jira: none` skips this.
 
 8. **Summary.** Read the run log and take the per-increment lines from it rather than from the
    session, so a compacted run reports as completely as an uninterrupted one. Change name; one
