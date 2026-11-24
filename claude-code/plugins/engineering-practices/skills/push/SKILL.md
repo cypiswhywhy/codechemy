@@ -56,13 +56,14 @@ gh pr create --title "<concise title from the branch's commits>" --body "<summar
 Derive title/body from `git log <default-branch>..HEAD`. End the body with:
 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 
-**Jira**, only when the project's `## Project workflow` has a `Jira: <KEY> ...` line, and once
-per branch. The ticket key is the `Jira: <KEY>-<n>` line in the branch's commit bodies, else a
-`<KEY>-<n>` in the branch name; a `Jira: none` line there means skip this. Without either, ask
-once: an existing key, a new ticket (summary
-and description from the PR), or none; nobody to ask means none. With a key, start the PR title
-with it, and move the ticket to the `review` status through the Atlassian MCP server's Jira
-tools unless it is there already. If those tools are not connected, say so in Step 8 and go on.
+**Jira**, once the PR exists, only when the project's `## Project workflow` has a
+`Jira: <KEY> ...` line. The ticket key is a `<KEY>-<n>` at the start of the PR title, else the
+`Jira: <KEY>-<n>` line in the branch's commit bodies; a `Jira: none` line there means skip this.
+Without either, ask once: an existing key, a new ticket (summary and description from the PR),
+or none; nobody to ask means none. With a key, make sure the PR title starts with it
+(`gh pr edit --title`), which also keeps the choice for later runs, and move the ticket to the
+`review` status through the Atlassian MCP server's Jira tools unless it is there already. If
+those tools are not connected, say so in Step 8 and go on.
 
 ## Step 3 — Request Copilot code review
 

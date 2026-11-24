@@ -49,8 +49,8 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
 
 3. **Read the change.** `openspec status --change "<name>" --json`, then
    `openspec instructions apply --change "<name>" --json`. Handle `blocked` and `all_done`
-   exactly as `/opsx:apply` does; on `all_done` with Jira on (step 5), also move the ticket to
-   its `done` status unless it is there already. Read every file in `contextFiles`. Treat `context` as
+   exactly as `/opsx:apply` does; on `all_done` with Jira on, also move the ticket named by
+   the `Jira:` line in `proposal.md` (step 5) to its `done` status unless it is there already. Read every file in `contextFiles`. Treat `context` as
    required input and `operationGuidance` as advisory, as that command specifies.
 
 4. **Find the next increment.** Task groups are the `## N. <name>` (or `### `) headings in the
@@ -69,8 +69,8 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
    - **Find it.** The `Jira: <KEY>-<n>` line in the change's `proposal.md`. Without one, search
      the project for an open issue matching the change's name and the proposal's title, then
      ask once: use the match, create a ticket (summary from the proposal's title, description
-     from its Why section, linking the change directory), or go on without one; nobody to ask
-     means without. Once step 6 has created the branch, record the answer as
+     from its Why section, linking the change directory), or go on without one. Nobody to ask means without, recording nothing, so the next
+     attended run asks. Once step 6 has created the branch, record the answer as
      `Jira: <KEY>-<n>`, or `Jira: none`, at the top of `proposal.md`, so it lands in this
      increment's commit and later increments do not ask again. With `Jira: none`, skip to the
      last bullet.
@@ -105,7 +105,8 @@ Requirements: the `openspec` CLI, a clean working tree, and either the `/push` s
    this PR merges (or immediately on a stacked branch, if the user prefers; say that stacking is
    the default only when they ask for it), and `/apply-all-increments <change>`, which always
    starts from a fresh main and walks through the remaining groups and the archive without
-   re-invoking. If the group was the last one, suggest `/opsx:archive`.
+   re-invoking. If the group was the last one, suggest `/opsx:archive`; with a Jira ticket, say that
+   running `/apply-increment <change>` once after the merge moves it to `done` (step 3).
 
 ## Rules
 

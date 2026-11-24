@@ -47,12 +47,13 @@ skills that care detect it themselves, so it is reported, not recorded.
 
 4. **Jira details**, only when the answer was `on`. Jira is reached through the Atlassian MCP
    server's tools. If the session only has its `authenticate` tool, run it and let the user
-   finish the sign-in; if there is no Atlassian server at all, record `Jira: off` and say that
-   connecting it and re-running `/kick-off` turns it on. Then:
-   - List the projects the user can see and the statuses of that project's workflow (from the
-     transitions of a recent issue).
+   finish the sign-in; if there is no Atlassian server at all, keep the recorded `Jira` line (`Jira: off` when
+   none is recorded) and say that connecting it and re-running `/kick-off` turns it on. Then:
+   - List the projects the user can see and the statuses that project uses: a recent issue's
+     current status plus its transitions, across a few issues. With no issues, the user types
+     the names.
    - Ask one more `AskUserQuestion` call: the project key, and which status means each of
-     `start` (work begun), `review` (PR open) and `done` (merged and archived). Propose the
+     `start` (work begun), `review` (PR open) and `done` (every increment merged). Propose the
      closest names, such as `In Progress`, `In Review`, `Done`.
 
 5. **Write the section.** Append it to the chosen file, or replace it in place, using this
