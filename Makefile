@@ -7,7 +7,8 @@ SKILLS_MANIFEST := $(SKILLS_DEST)/.codechemy-manifest
 MARKETPLACE := codechemy
 PLUGIN := engineering-practices
 
-SKILLS := $(sort $(notdir $(patsubst %/SKILL.md,%,$(wildcard claude-code/plugins/$(PLUGIN)/skills/*/SKILL.md))))
+HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+SKILLS := $(sort $(notdir $(patsubst %/SKILL.md,%,$(wildcard $(HERE)claude-code/plugins/$(PLUGIN)/skills/*/SKILL.md))))
 
 # What each skill and the plugin shells out to, as `name:cmd,cmd`. A skill not
 # listed needs nothing.
