@@ -29,7 +29,7 @@ Say the call in one line before anything else, so the user can overrule it:
 
 - `Framing: <which condition holds>` - continue to step 2.
 - `Not framing: <why>` - e.g. "single module, reversible, one obvious shape" - and go write
-  the code. The practice `05-understand-first` already covers the small case in four lines.
+  the code, after the plan approval that `Plan approval: ask` requires, if the project sets it. The practice `05-understand-first` already covers the small case in four lines.
 - `Deferring to OpenSpec` - a condition holds and the repo has an `openspec/` directory, so
   the design and the task list are `/opsx:propose`'s job. Hand over rather than producing a
   second, competing artifact.

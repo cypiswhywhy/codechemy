@@ -23,8 +23,8 @@ skills that care detect it themselves, so it is reported, not recorded.
 
 ## Steps
 
-1. **Read what is recorded.** Look for `## Project workflow` in `CLAUDE.md`, `.claude/CLAUDE.md`
-   and `CLAUDE.local.md` at the git root. If one exists, show its current values; the questions
+1. **Read what is recorded.** Look for `## Project workflow` in `CLAUDE.md` and
+   `CLAUDE.local.md` at the git root. If one exists, show its current values; the questions
    in step 3 then change them rather than start over.
 
 2. **Detect.** Report in one line, without asking: OpenSpec, `openspec/` present or not.
@@ -32,7 +32,8 @@ skills that care detect it themselves, so it is reported, not recorded.
 3. **Ask once**, with one `AskUserQuestion` call holding these questions. Put the current value,
    or the default when nothing is recorded, first:
    - **Review**: `copilot` (an independent model reviews; costs premium requests and a 4-6
-     minute wait per cycle) or `local` (the same model in a fresh context, one pass, no wait).
+     minute wait per cycle) or `local` (the same model in a fresh context, one pass, no wait). `local`
+     does not stop a ruleset that auto-requests Copilot; say so if one exists.
    - **Plan approval**: `auto` (show the plan and go on) or `ask` (show the plan and wait for a
      yes before editing code).
    - **Where**: `CLAUDE.md` (committed; the whole team gets these settings) or
@@ -52,7 +53,8 @@ skills that care detect it themselves, so it is reported, not recorded.
    - Review: copilot
    - Plan approval: ask - before editing code, show a short plan (what changes, in which files,
      which tests prove it) and wait for the user's yes. OpenSpec apply skills skip this: the
-     change is the approved plan.
+     change is the approved plan. A session that cannot ask (`claude -p`, CI, a subagent)
+     states the plan and goes on.
    ```
 
    With `Plan approval: auto`, the line is just `- Plan approval: auto`. The `ask` line carries
@@ -65,5 +67,6 @@ skills that care detect it themselves, so it is reported, not recorded.
 ## Rules
 
 - One question call, in step 3. Everything else is detection.
-- Never write a value the user did not choose, except the defaults for a question they skipped.
+- Never write a value the user did not choose. A skipped question keeps the recorded value, or
+  the default when none is recorded.
 - Record only lines from the table above. A preference no skill reads is noise in every session.
