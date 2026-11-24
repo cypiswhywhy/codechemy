@@ -29,7 +29,7 @@ Say the call in one line before anything else, so the user can overrule it:
 
 - `Framing: <which condition holds>` - continue to step 2.
 - `Not framing: <why>` - e.g. "single module, reversible, one obvious shape" - and go write
-  the code. The practice `05-understand-first` already covers the small case in four lines.
+  the code, after the plan approval that `Plan approval: ask` requires, if the project sets it. The practice `05-understand-first` already covers the small case in four lines.
 - `Deferring to OpenSpec` - a condition holds and the repo has an `openspec/` directory, so
   the design and the task list are `/opsx:propose`'s job. Hand over rather than producing a
   second, competing artifact.
@@ -103,14 +103,15 @@ Rules that keep it honest:
 ## Step 4 — One decision, then go
 
 Wait for the user only when they asked for the design themselves (`/frame`, "design this
-first", "what are the options") and `AskUserQuestion` is available. Then ask once with it: the
+first", "what are the options") or the project's `## Project workflow` says
+`Plan approval: ask`, and `AskUserQuestion` is available. Then ask once with it: the
 brief and plan as shown against the rejected approach, plus any open question. Carry your
 recommendation in the first option. An answer that changes the plan gets the changed lines
 shown again, not the whole brief.
 
-Otherwise do not stop. That covers framing you started on your own under `05-understand-first`,
-and any session without `AskUserQuestion` (`claude -p`, the SDK, CI, a subagent), where nobody
-reads a question. End the brief with `Proceeding on the recommendations above` and go on in the
+Otherwise do not stop. That covers framing you started on your own under `05-understand-first`
+in a project without `Plan approval: ask`, and any session without `AskUserQuestion`
+(`claude -p`, the SDK, CI, a subagent), where nobody reads a question. End the brief with `Proceeding on the recommendations above` and go on in the
 same turn. An open question with no defensible default is the exception: ask it where you can;
 where you cannot, take the more reversible option, record it under `Assumed`, and go on.
 

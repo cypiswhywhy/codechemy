@@ -9,3 +9,6 @@ Tallies recurring classes of mistake caught in code review. One `##` section per
 ## Renaming a user-facing name without a breaking-change version bump
 
 - 2026-11-20, https://github.com/cypiswhywhy/codechemy/pull/19 - renamed two slash-command skills, bumped minor
+
+## A new "wait for the user" rule that forgets sessions nobody watches
+- 2026-11-24, https://github.com/cypiswhywhy/codechemy/pull/20 - `Plan approval: ask` would stop `claude -p` and subagents

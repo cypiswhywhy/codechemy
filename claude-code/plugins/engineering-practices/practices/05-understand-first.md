@@ -14,4 +14,5 @@ A correct implementation of the wrong thing is the one defect nothing downstream
   reads a question, and a turn ended on one ends the work.
 - Run `/frame` first when the change alters a published contract, crosses a module boundary, or
   is hard to undo, then continue into the code in the same turn: framing is a step of the work,
-  not a place to stop. Everything else wants the four lines above, not a document.
+  not a place to stop, unless the project's `## Project workflow` says `Plan approval: ask`.
+  Everything else wants the four lines above, not a document.

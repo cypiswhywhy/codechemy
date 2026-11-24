@@ -58,6 +58,9 @@ Derive title/body from `git log <default-branch>..HEAD`. End the body with:
 
 ## Step 3 — Request Copilot code review
 
+If the project's `## Project workflow` section (CLAUDE.md or CLAUDE.local.md, written by
+`/kick-off`) says `Review: local`, skip this step and Step 4 and go to Step 3a.
+
 The repo may already auto-request Copilot via a branch ruleset ("Automatically
 request Copilot code review", set in Settings → Rules → Rulesets). That ruleset is
 independent of the manual request below: if it is configured the manual request is
@@ -123,14 +126,15 @@ Copilot can review cycle 1 and then run out of quota by cycle 3:
    findings *because it did not look* — rather than a fixed string. A review that
    looked and found nothing is green, not a failure.
 3. Step 4's ~20-minute wait runs out.
+4. The project chose it: `Review: local` (Step 3).
 
 Then, once:
 
 1. **Check the skill is there.** `/code-review` must be listed among the skills
    available in this session. If it is not, stop here: tell the user the branch is
-   pushed and the PR is unreviewed, which of the three signals above fired, and that
-   enabling Copilot code review for the repo or waiting for the quota to reset is
-   what restores the primary gate.
+   pushed and the PR is unreviewed and which of the signals above fired. For signals
+   1-3, add that enabling Copilot code review for the repo or waiting for the quota to
+   reset is what restores the primary gate.
 2. **Run it in a subagent that did not write the change.** Copilot's value is that it
    reads the diff without the reasoning that produced it; reviewing in the context that
    just wrote the code loses exactly that, because every questionable decision arrives
