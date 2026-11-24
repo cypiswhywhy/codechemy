@@ -7,7 +7,11 @@ SKILLS_MANIFEST := $(SKILLS_DEST)/.codechemy-manifest
 MARKETPLACE := codechemy
 PLUGIN := engineering-practices
 
-# What each skill and the plugin shells out to, as `name:cmd,cmd`.
+HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+SKILLS := $(sort $(notdir $(patsubst %/SKILL.md,%,$(wildcard $(HERE)claude-code/plugins/$(PLUGIN)/skills/*/SKILL.md))))
+
+# What each skill and the plugin shells out to, as `name:cmd,cmd`. A skill not
+# listed needs nothing.
 PREREQS := \
 	self-review:git \
 	push:git,gh \
@@ -20,16 +24,20 @@ PREREQS := \
 .PHONY: check
 check:
 	@missing=""; \
-	for entry in $(PREREQS); do \
+	for name in $(SKILLS) $(PLUGIN); do \
+		cmds=""; \
+		for entry in $(PREREQS); do \
+			[ "$${entry%%:*}" = "$$name" ] && cmds=$$(echo "$${entry#*:}" | tr ',' ' '); \
+		done; \
 		lack=""; \
-		for cmd in $$(echo "$${entry#*:}" | tr ',' ' '); do \
+		for cmd in $$cmds; do \
 			command -v "$$cmd" >/dev/null 2>&1 || lack="$$lack $$cmd"; \
 		done; \
 		if [ -n "$$lack" ]; then \
-			echo "MISSING   $${entry%%:*} needs:$$lack"; \
+			echo "MISSING   $$name needs:$$lack"; \
 			missing="$$missing$$lack"; \
 		else \
-			echo "ok        $${entry%%:*}"; \
+			echo "ok        $$name"; \
 		fi; \
 	done; \
 	[ -n "$$missing" ] || exit 0; \
