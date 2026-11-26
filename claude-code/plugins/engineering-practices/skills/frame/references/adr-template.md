@@ -1,4 +1,3 @@
-```markdown
 # NNNN. <The decision, stated as a sentence>
 
 - **Status**: Proposed | Accepted | Superseded by [NNNN](NNNN-<slug>.md)
@@ -29,4 +28,3 @@ Follow-up work the decision creates, and what it rules out from now on.
 
 ## Links
 The issue, PR or discussion behind the decision.
-```

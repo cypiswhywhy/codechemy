@@ -9,8 +9,7 @@ A senior engineer's edge is mostly spent before the first line: on deciding what
 which shape it takes. This skill makes that step explicit and cheap. It produces **one screen
 of brief and plan**, settles the one decision in it, and goes on into implementation.
 
-The brief holds no code, and the skill creates no file unless the repo already keeps decision
-records.
+The brief holds no code, and the skill writes one file: the ADR in step 5.
 
 ## Step 1 — Check it is worth framing
 
@@ -127,7 +126,9 @@ repo's ADR folder and in the format its neighbours use. If the repo has none, st
 Constraints become the Problem; Approach and each Rejected option become the Options, with the
 pros and cons that decided between them; the Plan's "done when" lines become the Success
 criteria; the Blast radius's migration and rollback become the Consequences; the Links name the
-issue and the PR. The Plan steps stay in the conversation and the PR.
+issue and the PR. A repo's own format wins over the template: keep its headings, and put the
+options with their pros and cons and the success criteria under the nearest ones. The Plan steps
+stay in the conversation and the PR.
 
 A plan with more than one step lands in more than one PR. Put the Plan block in the first PR's
 description, with each step ticked as it merges, so a later session can pick up the
@@ -147,4 +148,4 @@ next step from there.
 - Keep the user's framing where it is adequate. Reframing what the user already stated clearly
   is not design work.
 - One screen, one decision (asked, or taken on your recommendation, per step 4), no file
-  unless step 5 applies. The PR description in step 5 is not a file.
+  besides step 5's ADR. The PR description in step 5 is not a file.

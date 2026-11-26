@@ -21,5 +21,6 @@ A correct implementation of the wrong thing is the one defect nothing downstream
   success criteria where something can be measured, the consequences (follow-up work, what it
   rules out), and links to the issue or PR, because the next person to question it has only the
   code. Use the repo's ADR folder and template; with none, start
-  `docs/internals/adrs/0001-<decision>.md` with those sections under a Status and a Date. A
-  reversed decision gets a new ADR, not an edit.
+  `docs/internals/adrs/0001-<decision>.md` with those sections under a Status and a Date. In a
+  repo with `openspec/`, the OpenSpec change is the record instead. A reversed decision
+  gets a new ADR, and the old one's Status becomes `Superseded by` it.
