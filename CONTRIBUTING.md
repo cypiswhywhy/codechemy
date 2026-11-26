@@ -52,7 +52,8 @@ flowchart LR
 - Commit messages follow Conventional Commits: `feat(scope): …`, `fix(…)`, `refactor(…)`,
   `chore(…)`. Review fixes are `address code review (cycle N/3): …`.
 - Bump `version` in `claude-code/plugins/engineering-practices/.claude-plugin/plugin.json` in
-  the same change. Installs update only when it goes up.
+  the same change. Installs update only when it goes up; `test_plugin_version.py` fails a branch
+  that changes the plugin without raising it.
 - Ship with `/push`: it opens the PR and runs the automated review. Merging is manual.
 
 ### Adding a practice, hook or skill
