@@ -10,7 +10,7 @@ full text, this page is the index.
   thing, name the two or three ways it can fail, ask only where two readings lead to different
   work - and run
   [`/frame`](../../claude-code/plugins/engineering-practices/skills/frame/SKILL.md) when the change touches a contract, crosses a module
-  boundary or is hard to undo.
+  boundary or is hard to undo, and record that decision in an ADR in the same change.
 - [**10-leave-it-smaller.md**](../../claude-code/plugins/engineering-practices/practices/10-leave-it-smaller.md): every change is also a maintenance pass over the code it
   touches. Tidy as you go, replace don't accumulate, delete don't deprecate, no defensive code
   the task does not need, prove then delete, a scope boundary, and the diff shape in every summary.

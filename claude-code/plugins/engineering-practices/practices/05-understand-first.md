@@ -16,3 +16,11 @@ A correct implementation of the wrong thing is the one defect nothing downstream
   is hard to undo, then continue into the code in the same turn: framing is a step of the work,
   not a place to stop, unless the project's `## Project workflow` says `Plan approval: ask`.
   Everything else wants the four lines above, not a document.
+- Record a decision of that size in an ADR (architecture decision record) in the same change:
+  the problem, the options considered with the pros and cons of each, the one chosen and why,
+  success criteria where something can be measured, the consequences (follow-up work, what it
+  rules out), and links to the issue or PR, because the next person to question it has only the
+  code. Use the repo's ADR folder and template; with none, start
+  `docs/internals/adrs/0001-<decision>.md` with those sections under a Status and a Date. In a
+  repo with `openspec/`, the OpenSpec change is the record instead. A reversed decision
+  gets a new ADR, and the old one's Status becomes `Superseded by` it.
