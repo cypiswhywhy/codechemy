@@ -22,3 +22,6 @@ Tallies recurring classes of mistake caught in code review. One `##` section per
 
 ## Changing a rule in one place while another passage still states the old one
 - 2026-11-26, https://github.com/cypiswhywhy/codechemy/pull/24 - /frame Step 5 now writes an ADR; its intro and Rules still said "no file"
+
+## Checking against where the branch started instead of where main is now
+- 2026-11-26, https://github.com/cypiswhywhy/codechemy/pull/26 - version guard read the merge-base's version, so two branches could ship the same bump
