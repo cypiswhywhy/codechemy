@@ -578,8 +578,8 @@ missing one, because someone will trust it.
 - **Docs for things this run deleted**, and missing docs for things it changed.
 - **Undocumented public API** — exported functions, endpoints, config, in a codebase
   that documents the rest.
-- **Missing "why"** — an architecture decision with no record. Where the project keeps
-  ADRs, a decision made during this run belongs in one.
+- **Missing "why"** — an architecture decision with no record. A decision made during this
+  run that meets the `/frame` bar belongs in an ADR (practice 05).
 - **Bloat that carries no information** — restating the obvious, duplicated across
   README and docs pages, tutorials for removed features, changelog entries better left
   to git.

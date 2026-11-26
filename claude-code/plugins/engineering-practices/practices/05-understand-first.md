@@ -18,7 +18,8 @@ A correct implementation of the wrong thing is the one defect nothing downstream
   Everything else wants the four lines above, not a document.
 - Record a decision of that size in an ADR (architecture decision record) in the same change:
   the problem, the options considered with the pros and cons of each, the one chosen and why,
-  and success criteria where something can be measured, because the next person to question it
-  has only the code. Use the repo's ADR folder and template; with none, start
+  success criteria where something can be measured, the consequences (follow-up work, what it
+  rules out), and links to the issue or PR, because the next person to question it has only the
+  code. Use the repo's ADR folder and template; with none, start
   `docs/internals/adrs/0001-<decision>.md` with those sections under a Status and a Date. A
   reversed decision gets a new ADR, not an edit.

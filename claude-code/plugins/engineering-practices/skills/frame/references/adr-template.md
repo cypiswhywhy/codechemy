@@ -23,4 +23,10 @@ The option chosen, and why its cons were worth taking over the others'.
 ## Success criteria
 How we will know it worked: a measurable outcome or a test. Leave the section out when there is
 nothing to measure.
+
+## Consequences
+Follow-up work the decision creates, and what it rules out from now on.
+
+## Links
+The issue, PR or discussion behind the decision.
 ```
