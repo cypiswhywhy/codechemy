@@ -16,3 +16,7 @@ A correct implementation of the wrong thing is the one defect nothing downstream
   is hard to undo, then continue into the code in the same turn: framing is a step of the work,
   not a place to stop, unless the project's `## Project workflow` says `Plan approval: ask`.
   Everything else wants the four lines above, not a document.
+- Record a decision of that size in an ADR (architecture decision record) in the same change:
+  the context, the choice, the option rejected, and what it costs, because the next person to
+  question it has only the code. Use the repo's ADR folder and template; with none, start
+  `docs/internals/adrs/0001-<decision>.md`. A reversed decision gets a new ADR, not an edit.
