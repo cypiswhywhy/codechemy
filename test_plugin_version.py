@@ -45,10 +45,12 @@ class VersionProblemCase(unittest.TestCase):
 
 class ThisBranchCase(unittest.TestCase):
     def test_this_branch_raises_the_version_if_it_changes_the_plugin(self) -> None:
+        if subprocess.run(["git", "rev-parse", "--verify", "-q", "origin/main"], cwd=HERE, capture_output=True).returncode:
+            self.skipTest("no origin/main to compare with")
         base = git("merge-base", "HEAD", "origin/main")
-        changed = git("diff", "--name-only", base).splitlines()
+        changed = git("diff", "--name-only", "--no-renames", base).splitlines()
         changed += git("ls-files", "--others", "--exclude-standard").splitlines()
-        base_version = json.loads(git("show", f"{base}:{MANIFEST}"))["version"]
+        base_version = json.loads(git("show", f"origin/main:{MANIFEST}"))["version"]
         head_version = json.loads((HERE / MANIFEST).read_text())["version"]
         problem = version_problem(changed, base_version, head_version)
         self.assertIsNone(problem, problem)
