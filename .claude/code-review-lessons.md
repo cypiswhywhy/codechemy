@@ -21,4 +21,4 @@ Tallies recurring classes of mistake caught in code review. One `##` section per
 - 2026-11-24, https://github.com/cypiswhywhy/codechemy/pull/23 - `make -f` from another folder found no skills and passed
 
 ## Changing a rule in one place while another passage still states the old one
-- 2026-11-26 https://github.com/cypiswhywhy/codechemy/pull/24 — /frame Step 5 now writes an ADR; its intro and Rules still said "no file"
+- 2026-11-26, https://github.com/cypiswhywhy/codechemy/pull/24 - /frame Step 5 now writes an ADR; its intro and Rules still said "no file"
