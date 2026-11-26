@@ -12,8 +12,10 @@ to undo) left no record of why.
 ## Decision
 Practice 05 tells the agent to record any decision at the `/frame` bar in an ADR, in the same
 change. It uses the repo's ADR folder and template; a repo with none gets
-`docs/internals/adrs/`, the location the `docs-*` skills already use. `/frame` Step 5 writes the
-ADR instead of deciding whether to.
+`docs/internals/adrs/`, the location the `docs-*` skills already use, and the template in
+`skills/frame/references/adr-template.md`: Problem, Options with the pros and cons of each,
+Decision and why, and Success criteria where something can be measured. `/frame` Step 5 writes
+the ADR instead of deciding whether to.
 
 ## Consequences
 - The rule is always on, so it applies even when `/frame` is not run.

@@ -120,12 +120,13 @@ asks for.
 
 ## Step 5 — Record the decision in an ADR
 
-A change worth framing is a decision worth recording. Write the Problem, Approach, Rejected and
-the cost of the approach into an ADR in the same change, in the repo's ADR folder and in the
-format its neighbours use. If the repo has none, start `docs/internals/adrs/` with
-`0001-<decision-in-kebab-case>.md`: Status, Date, then Context, Decision and Consequences. The
-rest of the brief (the Plan, Blast radius) is scaffolding and stays in the conversation and the
-PR.
+A change worth framing is a decision worth recording. Write an ADR in the same change, in the
+repo's ADR folder and in the format its neighbours use. If the repo has none, start
+`docs/internals/adrs/` with `0001-<decision-in-kebab-case>.md` from
+[`references/adr-template.md`](references/adr-template.md). The brief fills it: Problem and
+Constraints become the Problem; Approach and each Rejected option become the Options, with the
+pros and cons that decided between them; the Plan's "done when" lines become the Success
+criteria. Blast radius and the Plan steps stay in the conversation and the PR.
 
 A plan with more than one step lands in more than one PR. Put the Plan block in the first PR's
 description, with each step ticked as it merges, so a later session can pick up the
